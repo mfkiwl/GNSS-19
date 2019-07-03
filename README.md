@@ -9,6 +9,9 @@
         adj. [ordinary] 民用的
     constellation:
         noun. 星座，卫星的配置
+    ephemeris: 星历表
+    ephemeride: 星历法
+        历法是用年、月、日等时间单位计算时间的方法。
     marine: adj. 海洋的，航海的
     nautical:
         adj. 船舶的，航海的
@@ -21,6 +24,7 @@
     keep a low profile: 不张扬，低调处理
     interfere with sth: 妨碍，干扰
     nautical mile: 海里
+    the atmosphere: （包围地球的）大气，大气层
 
 ### 行业术语
     UAV: Unmanned Aerial Vehicles
@@ -54,6 +58,8 @@
         adj. 严重的，危机的
     earthly:
         adj. 尘世的，人间的
+    elegant:
+        adj. （想法，计划或办法）巧妙地，简练的
     footnote:
         noun. 脚注
     ingenious:
