@@ -28,8 +28,12 @@
     Troposphere:
         对流层
     marine: adj. 海洋的，航海的
+    maritime:
+        adj. 航海的，海事的
     nautical:
         adj. 船舶的，航海的
+    orbital:
+        adj. 轨道的
     radiation:
         noun. （光或热的）辐射
     solar:
@@ -41,6 +45,7 @@
 
 
 ### 习语
+    conform to/with sth: 遵守，依照
     dead reckoning: 航位推算
     fall into sth:
         [start] 开始做

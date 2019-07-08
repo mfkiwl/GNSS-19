@@ -1,6 +1,19 @@
 # GNSS
 
+## NMEA
+
+### NMEA语句
+
+An NMEA sentence consists of a start delimiter, followed by a comma-separated sequence of fields, followed by the character *(ASCII 42), the checksum and an end-of-line marker.
+
+#### NMEA语句最大长度
+最大的NMEA语句的长度（包含$，<CR><LF>）是82字节。
+
 ## minmea_span7
+
+如果要准确地了解NMEA，那么下面这篇文章是一个很好的阅读材料
+
+https://gpsd.gitlab.io/gpsd/NMEA.html
 
 需求：需要做成gnss_gpsd统一的接口
 
