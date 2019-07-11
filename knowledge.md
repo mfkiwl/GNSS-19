@@ -20,3 +20,48 @@
         /* 这句话是创建一个热点，热点的名字是pi，密码是perceptin16 */
         sudo create_ap wlan0 eth0 pi perceptin16 &
     配置成连接中兴基站的语句如下：
+        /*
+          挂载点的地址：52.83.141.234
+          挂载点的端口号：2101
+          用户名：PI2
+          密码：perceptin16
+        */
+        nohup /home/pi/RTKLIB/app/str2str/gcc/str2str -in ntrip://PI2:perceptin16@52.83.141.234:2101/PI_SZ -out serial://ttyUSB0:115200:8:n:1 >/dev/null &
+
+        /* 这句话是创建一个热点，热点的名字是pi_SCOUT，密码是perceptin16 */
+        sudo create_ap wlan0 eth0 pi_SCOUT perceptin16 &
+
+
+
+当天线是一左一右时（请参考PTN）
+
+    1. 左边的天线接ATN1，右边的天线接ATN2
+    2. 左边的天线给pose
+    3. 左边、右边的天线一起给heading
+
+
+
+
+当天线是一前一后时（请参考Vending2）
+
+    1. 前面的天线接到了ATN2，后面的天线接到了ATN1
+    2. 后面的天线给pose
+    3. 前面、后面的天线一起给heading
+
+    接收机的com2接到了树莓派的USB，树莓派通过网线连到路由器
+
+## 关于树莓派
+
+树莓派的作用是给差分信号
+
+ssh pi@192.168.12.1
+password: perceptin
+
+## Trouble-shooting
+a. 
+<img src="images/gps_error_usb_permission.jpg" alt="drawing" width="459" height="612"/>
+
+出现这个问题时，/dev/ttyUSB0的权限是660
+/dev/ttyUSB0没有权限
+解决方法：
+  sudo chmod 777 /dev/ttyUSB0
