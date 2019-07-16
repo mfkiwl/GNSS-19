@@ -57,6 +57,14 @@
 ssh pi@192.168.12.1
 password: perceptin
 
+## 关于4G上网卡终端
+
+访问网页：
+http://192.168.8.1/html/home.html
+
+用户名：admin
+密码：perceptin16
+
 ## Trouble-shooting
 a. 
 <img src="images/gps_error_usb_permission.jpg" alt="drawing" width="459" height="612"/>
