@@ -62,6 +62,8 @@
         无人机
 
 ### 与GNSS无关其他单词
+    accustomed:
+        adj. 习惯的，适应了的
     acquisition:
         noun. 获得
     adequate:
@@ -88,6 +90,10 @@
         verb. 盘算，沉思
     convince:
         verb. 说服，使信服
+    cumbersome:
+        adj. 笨重的，累赘的
+    delve:
+        verb. 探索，深入寻找
     distinction:
         noun. [difference] 区别，差别
         noun. [high quality] 优秀，卓越
@@ -107,12 +113,16 @@
         verb. 猛冲
     impervious:
         adj. 不受影响的
+    inclined:
+        adj. 倾向于...的
     ingenious:
         adj. （人）灵巧的， （方法）巧妙的
     initiative:
         noun. [new plan] 倡议，新措施
     interfere:
         verb. 干涉，干预
+    intuitive:
+        adj. 直觉的，凭直觉的
     jam:
         verb. 干扰（无线电信号）
     mining:
@@ -153,6 +163,9 @@
         adj. 仔细的
     tragedy:
         noun. 悲剧，不幸
+    treasure:
+        noun. 珍宝
+      treasure map: 宝藏图
     trilateral:
         adj. 涉及三方的
     underestimate:
