@@ -1,4 +1,47 @@
 
+
+
+
+
+
+
+
+
+## RBV校准
+
+从IMU坐标系到车体坐标系的旋转量  Rotation from the IMU body frame to the vehicle frame.
+
+在初始化RBV校准之前，需要给RBV校准输入一个有效的RBV估计。至于如何输入一个有效的RBV估计，需要去看SETINSROTATION指令。
+
+
+# SPAN命令集
+
+
+## SETINSROTATION
+
+### 作用
+
+指定IMU帧与其他参考帧之间的旋转偏移量
+
+Specifies rotational offsets between the IMU frame and other reference frames
+
+## 语法
+
+SETINSROTATION INSRotation XRotation YRotation ZRotation [XRotationSD] [YRotationSD] [ZRotationSD]
+
+字段INSRotation可能的取值
+
+- RBV  从IMU坐标系到车体坐标系的旋转量
+
+实际命令举例： SETINSROTATION RBV 0 0 90 3.0 3.0 3.0
+
+其实要解决这个问题很简单，首先必须知道IMU坐标系和车体坐标系分别是怎样定义的。
+
+
+
+
+
+
 20190704, Foxconn
 
 基站在中兴，松灵两座移动站
