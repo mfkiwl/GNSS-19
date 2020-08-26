@@ -23,6 +23,9 @@
     ephemeris: 星历表
     ephemeride: 星历法
         历法是用年、月、日等时间单位计算时间的方法。
+
+    equator: 赤道
+    hemisphere: （尤指地球的）半球
     Ionosphere:
         电离层
     Troposphere:
