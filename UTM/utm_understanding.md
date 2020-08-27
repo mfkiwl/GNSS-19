@@ -10,6 +10,10 @@ UTM是一个投影后的2D坐标系，x轴/横轴是东西向的(east-west)，y�
 
 ![UTM zones](imgs/utm-zones.png "UTM zones")
 
+UTM coordinate of a point is stated by writing the zone, easting and then northing values.
+
+
+
 上海奉贤区的utm zone是51R。
 
 上海市奉贤区金海公路6055号临港南桥科技城用utm坐标来表示，Zone 51R E: 356099.73  N: 3422171.3
