@@ -36,3 +36,11 @@
 20220222@和芯星通@王青松：下下雨，不打雷，这个影响不是太大
 
 20220222@和芯星通@王青松：打雷是有影响的
+
+
+
+# N. 关于rtk 好的文章推荐
+
+GNSS基准站网数据处理方法与应用
+
+https://books.google.ca/books?id=H-kLEAAAQBAJ&pg=PT191&lpg=PT191&dq=rtk%E9%87%8C%E9%9D%A2%E7%9A%84%E6%A8%A1%E7%B3%8A%E5%BA%A6&source=bl&ots=aYw8xnKKcF&sig=ACfU3U2-JRa4hHfC0ZSd6z6nLrGGRYWCsg&hl=en&sa=X&ved=2ahUKEwikr6DdsO32AhVHVs0KHbb8BK4Q6AF6BAgQEAM#v=onepage&q=rtk%E9%87%8C%E9%9D%A2%E7%9A%84%E6%A8%A1%E7%B3%8A%E5%BA%A6&f=false
