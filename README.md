@@ -56,10 +56,71 @@ images/HMO1/.jpg
 ![UM980](images/HMO1/UM980_on_STM32H7.jpg "UM980")
 
 
+# 3. rtk status
 
-# 3. 环境对rtk数据的影响
+## 3.1 BESTPOS中的 pos type 如何对齐到 GPGGA 中的qual
 
-## 3.1 打雷下雨，对gps 单点数据有影响吗？
+选取数据，UM4B0_rtkmode_baseantenna-GPS1000_roverantenna-AK613_河边_20211208.log
+
+解析 BESTPOS，
+
+pos type | 个数
+-----|-----
+NARROW_INT (50)  |  12044
+WIDE_INT (49)  |  1315
+L1_INT (48)  |  45
+NARROW_FLOAT (34)  |  166
+L1_FLOAT (32)  |  6
+PSRDIFF (17)  |  25
+Total  |  13601
+
+解析 GPGGA，
+qual | 个数
+-----|-----
+RTK固定解 (4)  |  12090
+RTK浮点解 (5)  |  1487
+PSRDIFF (2)  |  25
+SINGLE (1)  |  0
+Total  |  13602
+
+选取数据，UM982_baseantenna1000_roverantenna-AK613_rtkmode_河边.log
+
+解析 BESTPOS，
+
+pos type | 个数
+-----|-----
+NARROW_INT (50)  |  5019
+WIDE_INT (49)  |  145
+L1_INT (48)  |  49
+NARROW_FLOAT (34)  |  0
+L1_FLOAT (32)  |  0
+PSRDIFF (17)  |  1
+Total  |  5214
+
+解析 GNGGA，
+qual | 个数 | 一半个数
+-----|-----|-----
+RTK固定解 (4)  |  10136  |  5068
+RTK浮点解 (5)  |  290  |  145
+PSRDIFF (2)  |  2  |  1
+Total  |  10428  | 5214
+
+通过上面两份具体数据，可确认以下对应关系，
+
+NARROW_INT + L1_INT，最后会被认为是 RTK固定解。  12089 -> 12090
+
+NARROW_FLOAT + WIDE_INT + L1_FLOAT，会被认为是 RTK浮点解。  1487 -> 1487
+
+
+# 4 rtk相关的工具
+
+## 4.1 rtkplot
+
+- 1. rtkplot解析的是 GPGGA 或者是 GNGGA 语句，而不是BESTPOS语句
+
+# 4. 环境对rtk数据的影响
+
+## 4.1 打雷下雨，对gps 单点数据有影响吗？
 
 20220222@和芯星通@王青松：下下雨，不打雷，这个影响不是太大
 
