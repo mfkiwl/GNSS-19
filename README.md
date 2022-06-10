@@ -44,7 +44,6 @@
     割草机的定位模块，必须依赖 imu(icm42688) 和 rtk，有一个坏了，定位就挂了。
 
 
-images/HMO1/.jpg
 
 ## 家用割草机 K803
 
@@ -52,8 +51,9 @@ images/HMO1/.jpg
 
 ![K803S](images/HMO1/K803S_on_STM32H7.jpg "K803S")
 
-
 ## 家用割草机 UM980
+
+![UM980](images/HMO1/UM980_on_STM32H7.jpg "UM980")
 
 - 要求输出 AGRIC语句 和 PSRVEL语句，均以Binary输出，均是20Hz
 
