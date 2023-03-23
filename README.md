@@ -5,6 +5,11 @@
 
 20230203@王宁，1个飞点无所谓。
 
+20230323@王宁，固定解的情况下，融合定位也会使用imu数据。
+
+![doppler velocity](images/localization_algorithm/doppler_velocity_horizontal_spd.png "doppler velocity")
+
+伪距速度输出的 hor spd（即水平方向的多普勒速度），只有0和正值，没有负值，它代表的是一个模值。
 
 ## 0.1 画边界的逻辑
 
