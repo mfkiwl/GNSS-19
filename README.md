@@ -183,6 +183,11 @@ NARROW_FLOAT + WIDE_INT + L1_FLOAT，会被认为是 RTK浮点解。  1487 -> 14
 
 alt（GGA语句的字段10） - undulation（GGA语句的字段12）
 
+和芯王青松@20230424，使用rtkplot分析原始观测值时，生成Renix文件时，Renix版本要选 V3.04。
+
+![Renix V3.04](images/rtkplot/Renix_version.PNG "Renix V3.04")
+
+
 ## 4.2 Unicore Converter
 
 以下讨论基于 v3.0.7-2022-5-12
