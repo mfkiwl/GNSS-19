@@ -1,0 +1,3 @@
+C:/Users/agilex/Documents/5-github-com/2-JulianLiao/4-GNSS_CR20221111_sync0429/projects/rangefile_parser/out/build/x64-debug/CMakeFiles/rangefile_parser.dir
+C:/Users/agilex/Documents/5-github-com/2-JulianLiao/4-GNSS_CR20221111_sync0429/projects/rangefile_parser/out/build/x64-debug/CMakeFiles/edit_cache.dir
+C:/Users/agilex/Documents/5-github-com/2-JulianLiao/4-GNSS_CR20221111_sync0429/projects/rangefile_parser/out/build/x64-debug/CMakeFiles/rebuild_cache.dir
