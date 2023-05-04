@@ -78,6 +78,7 @@ int main(int argc, char *argv[])
 
         while (!feof(p_file)) // to read file
         {
+            printf("Last:    ");
             for (int k = 0; k < RX_BUF_SIZE; k++) {
                 printf("%02x ", buffer[k]);
             }
@@ -86,8 +87,9 @@ int main(int argc, char *argv[])
             printf("size_of_buffer: %d\r\n", (int)sizeof(buffer));
             size_t items_read_cnt = fread_s(buffer, BUFFERSIZE, ELEMENTSIZE, ELEMENTCOUNT, p_file);
             printf("items_cnt: %d\r\n", (int)items_read_cnt);
+            printf("Current:    ");
             for (int k = 0; k < RX_BUF_SIZE; k++) {
-                printf("%d - 0x%02x ", k, buffer[k]);
+                printf("%02x ", buffer[k]);
             }
             printf("\r\n");
 
