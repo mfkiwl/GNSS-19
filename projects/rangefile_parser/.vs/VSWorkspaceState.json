@@ -12,7 +12,8 @@
     ]
   },
   "ExpandedNodes": [
-    ""
+    "",
+    "\\include"
   ],
   "SelectedNode": "\\rangefile_parser.cpp",
   "PreviewInSolutionExplorer": false

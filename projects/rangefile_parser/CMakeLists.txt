@@ -12,7 +12,7 @@ endif()
 project ("rangefile_parser")
 
 # 将源代码添加到此项目的可执行文件。
-add_executable (rangefile_parser "rangefile_parser.cpp" "rangefile_parser.h")
+add_executable (rangefile_parser "rangefile_parser.cpp" "include/rangefile_parser.h")
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET rangefile_parser PROPERTY CXX_STANDARD 20)
