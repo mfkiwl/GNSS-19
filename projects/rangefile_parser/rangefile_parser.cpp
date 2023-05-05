@@ -64,6 +64,7 @@ typedef enum {
     LAST_BYTES_1,
     LAST_BYTES_2,
     LAST_BYTES_3,
+    LAST_BYTES_BIG,
 } LAST_BYTES_NUM;
 
 typedef struct {
@@ -106,7 +107,7 @@ int main(int argc, char *argv[])
 
         uint16_t header_size = sizeof(GenericHeaderForBinaryMsg);
         printf("LINE%d, header_size: %d\r\n", __LINE__, header_size);
-
+        bool check_header = false;
         uint16_t msg_id = 0;
         int baserange_curr_size = 0;
         bool need_parse = false;
@@ -229,6 +230,8 @@ int main(int argc, char *argv[])
                     is_get_whole_frame = true;
                     need_search_in_this_frame = true;
                     start_index = need_parse_left_size;
+                    m_last_frame_record.last_loop_cnt = loop_cnt;
+                    m_last_frame_record.last_bytes_num = LAST_BYTES_BIG;
                 }
             } else {
                 if (loop_cnt == m_last_frame_record.last_loop_cnt) {
@@ -237,6 +240,7 @@ int main(int argc, char *argv[])
                         {
                             printf("Should never enter into this case!\r\n");
                             start_index = 0;
+                            check_header = false;
                             break;
                         }
                         case LAST_BYTES_1:
@@ -244,9 +248,11 @@ int main(int argc, char *argv[])
                             if (GEN_SYNC2 == buffer[0] && GEN_SYNC3 == buffer[1] && GEN_HEAD_LEN == buffer[2]) {
                                 printf("LAST_BYTES_1-combined success\r\n");
                                 start_index = 3;
+                                check_header = true;
                             }
                             else {
                                 start_index = 0;
+                                check_header = false;
                                 printf("LAST_BYTES_1-combined fail\r\n");
                             }
                             break;
@@ -256,9 +262,11 @@ int main(int argc, char *argv[])
                             if (GEN_SYNC3 == buffer[0] && GEN_HEAD_LEN == buffer[1]) {
                                 printf("LAST_BYTES_2-combined success\r\n");
                                 start_index = 2;
+                                check_header = true;
                             }
                             else {
                                 start_index = 0;
+                                check_header = false;
                                 printf("LAST_BYTES_2-combined fail\r\n");
                             }
                             break;
@@ -268,9 +276,11 @@ int main(int argc, char *argv[])
                             if (GEN_HEAD_LEN == buffer[0]) {
                                 printf("LAST_BYTES_3-combined success\r\n");
                                 start_index = 1;
+                                check_header = true;
                             }
                             else {
                                 start_index = 0;
+                                check_header = false;
                                 printf("LAST_BYTES_3-combined fail\r\n");
                             }
                             break;
@@ -278,6 +288,7 @@ int main(int argc, char *argv[])
                         default:
                         {
                             start_index = 0;
+                            check_header = false;
                             printf("Unknown case: last_bytes_num: %d\r\n", m_last_frame_record.last_bytes_num);
                             break;
                         }
@@ -285,58 +296,63 @@ int main(int argc, char *argv[])
                 }
                 else {
                     start_index = 0;
+                    check_header = false;
                 }
     
     
                 for (int j = start_index; (j+3) < DATASIZE; j++) {
                     if (0 == start_index) {
                         if (GEN_SYNC1 == buffer[j] && GEN_SYNC2 == buffer[j + 1] && GEN_SYNC3 == buffer[j + 2] && GEN_HEAD_LEN == buffer[j + 3]) {
+                            check_header = true;
                             msg_id = (uint16_t)(((uint16_t)buffer[j + 5]) << 8) + buffer[j + 4];
                         }
                     }
                     else {
+                        check_header = true;
                         msg_id = (uint16_t)(((uint16_t)buffer[j + 1]) << 8) + buffer[j];
                     }
-    
-                    switch (msg_id) {
-                        case MSG_ID_BASERANGE:
-                        {
-                            baserange_frame_cnt++;
-                            printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index), buffer[j+header_size-start_index]);
-                            printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index+1), buffer[j+header_size-start_index+1]);
-                            printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index+2), buffer[j+header_size-start_index+2]);
-                            printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index+3), buffer[j+header_size-start_index+3]);
-                            memcpy(&curr_baserange.range_header, &buffer[j-start_index], header_size);
-                            memcpy(&curr_baserange.observation_num, &buffer[j-start_index+header_size], 4);
-                            baserange_curr_size = 36 + (44 * curr_baserange.observation_num);
-                            int curr_frame_valid_size = 1024 - (j-start_index);
-                            int local_data_size = curr_frame_valid_size - header_size - 4;
-                            observation_num_idx = local_data_size / 44;
-                            br_sub_item_size = local_data_size % 44;
-                            memcpy(&curr_baserange.range_data[0], &buffer[j+header_size-start_index+4], observation_num_idx * 44);
-                            memcpy(&combined_buf[0], &buffer[ELEMENTSIZE-br_sub_item_size], br_sub_item_size);
 
-                            if (baserange_curr_size > curr_frame_valid_size) {
-                                is_get_whole_frame = false;
-                                need_parse = true;
-                                need_search_in_this_frame = false;        // Need parse in next frame, no need to search in this frame
-                                need_parse_left_size = baserange_curr_size - curr_frame_valid_size;
+                    if (check_header) {
+                        switch (msg_id) {
+                            case MSG_ID_BASERANGE:
+                            {
+                                baserange_frame_cnt++;
+                                printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index), buffer[j+header_size-start_index]);
+                                printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index+1), buffer[j+header_size-start_index+1]);
+                                printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index+2), buffer[j+header_size-start_index+2]);
+                                printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index+3), buffer[j+header_size-start_index+3]);
+                                memcpy(&curr_baserange.range_header, &buffer[j-start_index], header_size);
+                                memcpy(&curr_baserange.observation_num, &buffer[j-start_index+header_size], 4);
+                                baserange_curr_size = 36 + (44 * curr_baserange.observation_num);
+                                int curr_frame_valid_size = 1024 - (j-start_index);
+                                int local_data_size = curr_frame_valid_size - header_size - 4;
+                                observation_num_idx = local_data_size / 44;
+                                br_sub_item_size = local_data_size % 44;
+                                memcpy(&curr_baserange.range_data[0], &buffer[j+header_size-start_index+4], observation_num_idx * 44);
+                                memcpy(&combined_buf[0], &buffer[ELEMENTSIZE-br_sub_item_size], br_sub_item_size);
+
+                                if (baserange_curr_size > curr_frame_valid_size) {
+                                    is_get_whole_frame = false;
+                                    need_parse = true;
+                                    need_search_in_this_frame = false;        // Need parse in next frame, no need to search in this frame
+                                    need_parse_left_size = baserange_curr_size - curr_frame_valid_size;
+                                }
+                                printf("LINE%d, baserange_curr_size: %d, curr_frame_valid_size: %d, need_parse: %d, need_parse_left_size: %d\r\n", __LINE__, baserange_curr_size, curr_frame_valid_size, need_parse, need_parse_left_size);
+                                printf("LINE%d, start_index: %d, br_obs_num: %d\r\n", __LINE__, start_index, curr_baserange.observation_num);
+                                printf("LINE%d, loop_cnt: %d, j: %d, start_index: %d, baserange_frame_cnt: %d\r\n", __LINE__, loop_cnt, j, start_index, baserange_frame_cnt);
+                                break;
                             }
-                            printf("LINE%d, baserange_curr_size: %d, curr_frame_valid_size: %d, need_parse: %d, need_parse_left_size: %d\r\n", __LINE__, baserange_curr_size, curr_frame_valid_size, need_parse, need_parse_left_size);
-                            printf("LINE%d, start_index: %d, br_obs_num: %d\r\n", __LINE__, start_index, curr_baserange.observation_num);
-                            printf("LINE%d, loop_cnt: %d, j: %d, start_index: %d, baserange_frame_cnt: %d\r\n", __LINE__, loop_cnt, j, start_index, baserange_frame_cnt);
-                            break;
+                            case MSG_ID_BESTPOS:
+                            {
+                                bestpos_frame_cnt++;
+                                printf("LINE%d, bestpos_frame_cnt: %d\r\n", __LINE__, bestpos_frame_cnt);
+                                break;
+                            }
+                            default: {
+                                break;
+                            }
                         }
-                        case MSG_ID_BESTPOS:
-                        {
-                            bestpos_frame_cnt++;
-                            printf("LINE%d, bestpos_frame_cnt: %d\r\n", __LINE__, bestpos_frame_cnt);
-                            break;
-                        }
-                        default: {
-                            break;
-                        }
-                    }
+                    }    
                     if (need_parse) {
                         break;
                     }
@@ -415,6 +431,12 @@ int main(int argc, char *argv[])
                 if (check_crc_ret == true)
                 {
                     printf("LINE%d, CRC check pass!\r\n", __LINE__);
+                    is_get_whole_frame = false;
+                    memset(&curr_baserange.range_header, '\0', header_size);
+                    memset(&curr_baserange.observation_num, '\0', 4);
+                    memset(&curr_baserange.range_data, '\0', baserange_curr_size - header_size - 4 - 4);
+                    memset(&curr_baserange.crc, '\0', 4);
+                    memset(data_buf, '\0', BASERANGE_MAX_LEN);
                 }
                 else {
                     printf("LINE%d, CRC check fail!\r\n", __LINE__);
@@ -424,46 +446,60 @@ int main(int argc, char *argv[])
 
 
             if (need_search_in_this_frame) {
+                check_header = false;
                 for (int j = start_index; (j+3) < DATASIZE; j++) {
                     if (0 == start_index) {
                         if (GEN_SYNC1 == buffer[j] && GEN_SYNC2 == buffer[j + 1] && GEN_SYNC3 == buffer[j + 2] && GEN_HEAD_LEN == buffer[j + 3]) {
+                            check_header = true;
                             msg_id = (uint16_t)(((uint16_t)buffer[j + 5]) << 8) + buffer[j + 4];
                         }
                     }
-                    else {
-                        msg_id = (uint16_t)(((uint16_t)buffer[j + 1]) << 8) + buffer[j];
-                    }
-    
-                    switch (msg_id) {
-                        case MSG_ID_BASERANGE:
-                        {
-                            baserange_frame_cnt++;
-                            printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index), buffer[j+header_size-start_index]);
-                            printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index+1), buffer[j+header_size-start_index+1]);
-                            printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index+2), buffer[j+header_size-start_index+2]);
-                            printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index+3), buffer[j+header_size-start_index+3]);
-                            memcpy(&curr_baserange.range_header, &buffer[j], header_size);
-                            memcpy(&curr_baserange.observation_num, &buffer[j+header_size-start_index], 4);
-                            baserange_curr_size = 36 + (44 * curr_baserange.observation_num);
-                            int curr_frame_valid_size = 1024 - j;
-                            int local_data_size = curr_frame_valid_size - header_size - 4;
-                            observation_num_idx = local_data_size / 44;
-                            br_sub_item_size = local_data_size % 44;
-                            memcpy(&curr_baserange.range_data[0], &buffer[j+header_size-start_index+4], curr_frame_valid_size - header_size - 4);
-                            // memcpy(&data_buf[0], &buffer[j], curr_frame_valid_size);
-
-                            
-                            if (baserange_curr_size > curr_frame_valid_size) {
-                                need_parse = true;
-                                need_parse_left_size = baserange_curr_size - curr_frame_valid_size;
-                            }
-                            printf("LINE%d, baserange_curr_size: %d, curr_frame_valid_size: %d, need_parse: %d, need_parse_left_size: %d\r\n", __LINE__, baserange_curr_size, curr_frame_valid_size, need_parse, need_parse_left_size);
-                            printf("LINE%d, start_index: %d, br_obs_num: %d\r\n", __LINE__, start_index, curr_baserange.observation_num);
-                            printf("LINE%d, loop_cnt: %d, j: %d, start_index: %d, baserange_frame_cnt: %d\r\n", __LINE__, loop_cnt, j, start_index, baserange_frame_cnt);
-                            break;
+                    else if (loop_cnt == m_last_frame_record.last_loop_cnt) {
+                        if (LAST_BYTES_1 == m_last_frame_record.last_bytes_num || LAST_BYTES_2 == m_last_frame_record.last_bytes_num || LAST_BYTES_3 == m_last_frame_record.last_bytes_num) {
+                            check_header = true;
+                            msg_id = (uint16_t)(((uint16_t)buffer[j + 1]) << 8) + buffer[j];
                         }
-                        default: {
-                            break;
+                        else if (LAST_BYTES_BIG == m_last_frame_record.last_bytes_num) {
+                            if (GEN_SYNC1 == buffer[j] && GEN_SYNC2 == buffer[j + 1] && GEN_SYNC3 == buffer[j + 2] && GEN_HEAD_LEN == buffer[j + 3]) {
+                                check_header = true;
+                                msg_id = (uint16_t)(((uint16_t)buffer[j + 5]) << 8) + buffer[j + 4];
+                            }
+                        }
+                    }
+                    
+
+                    if (check_header) {
+                        switch (msg_id) {
+                            case MSG_ID_BASERANGE:
+                            {
+                                baserange_frame_cnt++;
+                                printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index), buffer[j+header_size-start_index]);
+                                printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index+1), buffer[j+header_size-start_index+1]);
+                                printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index+2), buffer[j+header_size-start_index+2]);
+                                printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index+3), buffer[j+header_size-start_index+3]);
+                                memcpy(&curr_baserange.range_header, &buffer[j], header_size);
+                                memcpy(&curr_baserange.observation_num, &buffer[j+header_size-start_index], 4);
+                                baserange_curr_size = 36 + (44 * curr_baserange.observation_num);
+                                int curr_frame_valid_size = 1024 - j;
+                                int local_data_size = curr_frame_valid_size - header_size - 4;
+                                observation_num_idx = local_data_size / 44;
+                                br_sub_item_size = local_data_size % 44;
+                                memcpy(&curr_baserange.range_data[0], &buffer[j+header_size-start_index+4], curr_frame_valid_size - header_size - 4);
+                                // memcpy(&data_buf[0], &buffer[j], curr_frame_valid_size);
+
+                                
+                                if (baserange_curr_size > curr_frame_valid_size) {
+                                    need_parse = true;
+                                    need_parse_left_size = baserange_curr_size - curr_frame_valid_size;
+                                }
+                                printf("LINE%d, baserange_curr_size: %d, curr_frame_valid_size: %d, need_parse: %d, need_parse_left_size: %d\r\n", __LINE__, baserange_curr_size, curr_frame_valid_size, need_parse, need_parse_left_size);
+                                printf("LINE%d, start_index: %d, br_obs_num: %d\r\n", __LINE__, start_index, curr_baserange.observation_num);
+                                printf("LINE%d, loop_cnt: %d, j: %d, start_index: %d, baserange_frame_cnt: %d\r\n", __LINE__, loop_cnt, j, start_index, baserange_frame_cnt);
+                                break;
+                            }
+                            default: {
+                                break;
+                            }
                         }
                     }
                     if (need_parse) {
