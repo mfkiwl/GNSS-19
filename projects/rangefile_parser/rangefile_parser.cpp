@@ -96,6 +96,7 @@ int main(int argc, char *argv[])
         int br_sub_item_size = 0;
         bool need_search_in_this_frame = false;
         int start_index = 0;
+        printf("size_of_buffer: %d\r\n", (int)sizeof(buffer));
         while (!feof(p_file)) // to read file
         {
             printf("Last:    ");
@@ -104,9 +105,8 @@ int main(int argc, char *argv[])
             }
             printf("\r\n");
             // function used to read the contents of file
-            printf("size_of_buffer: %d\r\n", (int)sizeof(buffer));
             size_t items_read_cnt = fread_s(buffer, BUFFERSIZE, ELEMENTSIZE, ELEMENTCOUNT, p_file);
-            printf("items_cnt: %d\r\n", (int)items_read_cnt);
+            printf("items_read_cnt: %d\r\n", (int)items_read_cnt);
             printf("Current:    ");
             for (int k = 0; k < RX_BUF_SIZE; k++) {
                 printf("%02x ", buffer[k]);
@@ -116,19 +116,19 @@ int main(int argc, char *argv[])
             if (need_parse) {
                 if (need_parse_left_size > ELEMENTSIZE) {
                     printf("LINE%d, observation_num_idx: %d, br_sub_item_size: %d\r\n", __LINE__, observation_num_idx, br_sub_item_size);
-                    memcpy(&curr_baserange.range_data[observation_num_idx+br_sub_item_size], &buffer[0], ELEMENTSIZE);
+                    memcpy(&curr_baserange.range_data[observation_num_idx]+br_sub_item_size, &buffer[0], ELEMENTSIZE);
                     need_parse = true;
-                    need_parse_left_size = 0;
+                    need_parse_left_size = need_parse_left_size - ELEMENTSIZE;
                     need_search_in_this_frame = false;
                 } else if (need_parse_left_size == ELEMENTSIZE) {
                     printf("LINE%d, observation_num_idx: %d, br_sub_item_size: %d\r\n", __LINE__, observation_num_idx, br_sub_item_size);
-                    memcpy(&curr_baserange.range_data[observation_num_idx+br_sub_item_size], &buffer[0], ELEMENTSIZE);
+                    memcpy(&curr_baserange.range_data[observation_num_idx]+br_sub_item_size, &buffer[0], ELEMENTSIZE);
                     need_parse = false;
                     need_parse_left_size = 0;
                     need_search_in_this_frame = false;
                 } else if (need_parse_left_size < ELEMENTSIZE) {
                     printf("LINE%d, observation_num_idx: %d, br_sub_item_size: %d\r\n", __LINE__, observation_num_idx, br_sub_item_size);
-                    memcpy(&curr_baserange.range_data[observation_num_idx+br_sub_item_size], &buffer[0], ELEMENTSIZE);
+                    memcpy(&curr_baserange.range_data[observation_num_idx]+br_sub_item_size, &buffer[0], ELEMENTSIZE);
                     need_parse = false;
                     need_parse_left_size = 0;
                     need_search_in_this_frame = true;
@@ -221,6 +221,7 @@ int main(int argc, char *argv[])
                             
                             if (baserange_curr_size > curr_frame_valid_size) {
                                 need_parse = true;
+                                need_search_in_this_frame = false;        // Need parse in next frame, no need to search in this frame
                                 need_parse_left_size = baserange_curr_size - curr_frame_valid_size;
                             }
                             printf("LINE%d, baserange_curr_size: %d, curr_frame_valid_size: %d, need_parse: %d, need_parse_left_size: %d\r\n", __LINE__, baserange_curr_size, curr_frame_valid_size, need_parse, need_parse_left_size);
