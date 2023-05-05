@@ -6,6 +6,7 @@
 #include <fcntl.h>
 
 
+#include "include/crc32.h"
 #include "include/rangefile_parser.h"
 #include "include/unicore.h"
 
@@ -97,6 +98,7 @@ int main(int argc, char *argv[])
         bool need_search_in_this_frame = false;
         int start_index = 0;
         printf("size_of_buffer: %d\r\n", (int)sizeof(buffer));
+        bool is_get_whole_frame = false;
         while (!feof(p_file)) // to read file
         {
             printf("Last:    ");
@@ -122,6 +124,7 @@ int main(int argc, char *argv[])
                     observation_num_idx = observation_num_idx + (ELEMENTSIZE + br_sub_item_size) / 44;
                     br_sub_item_size = (ELEMENTSIZE + br_sub_item_size) % 44;
                     need_search_in_this_frame = false;
+                    is_get_whole_frame = false;
                     printf("LINE%d, need_parse_left_size: %d, observation_num_idx: %d, br_sub_item_size: %d\r\n", \
                         __LINE__, need_parse_left_size, observation_num_idx, br_sub_item_size);
                 } else if (need_parse_left_size == ELEMENTSIZE) {
@@ -132,15 +135,20 @@ int main(int argc, char *argv[])
                     observation_num_idx = 0;
                     br_sub_item_size = 0;
                     need_search_in_this_frame = false;
+                    is_get_whole_frame = true;
                 } else if (need_parse_left_size < ELEMENTSIZE) {
-                    printf("LINE%d, observation_num_idx: %d, br_sub_item_size: %d\r\n", __LINE__, observation_num_idx, br_sub_item_size);
-                    memcpy(&curr_baserange.range_data[observation_num_idx]+br_sub_item_size, &buffer[0], ELEMENTSIZE);
+                    printf("LINE%d, need_parse_left_size: %d, observation_num_idx: %d, br_sub_item_size: %d\r\n", __LINE__, need_parse_left_size, observation_num_idx, br_sub_item_size);
+                    memcpy(&curr_baserange.range_data[observation_num_idx]+br_sub_item_size-4, &buffer[0], need_parse_left_size-4);
+                    memcpy(&curr_baserange.crc[0], &buffer[need_parse_left_size - 4], 4);
+                    printf("LINE%d, Received crc0: %02x, crc1: %02x, crc2: %02x, crc3: %02x\r\n", __LINE__, curr_baserange.crc[0], curr_baserange.crc[1], curr_baserange.crc[2], curr_baserange.crc[3]);
+
                     need_parse = false;
                     need_parse_left_size = 0;
                     observation_num_idx = 0;
                     br_sub_item_size = 0;
                     need_search_in_this_frame = true;
                     start_index = need_parse_left_size;
+                    is_get_whole_frame = true;
                 }
             } else {
                 if (loop_cnt == m_last_frame_record.last_loop_cnt) {
@@ -299,6 +307,23 @@ int main(int argc, char *argv[])
                     }
                 }
             }
+
+            if (is_get_whole_frame) {
+                uint32_t base_received_crc = curr_baserange.crc[0] + \
+                    (curr_baserange.crc[1] << 8) + \
+                    (curr_baserange.crc[2] << 16) + \
+                    (curr_baserange.crc[3] << 24);
+                bool check_crc_ret = checkCRC32((uint8_t *) & curr_baserange.range_header, baserange_curr_size, base_received_crc);
+                if (check_crc_ret == true)
+                {
+                    printf("LINE%d, CRC check pass!\r\n", __LINE__);
+                }
+                else {
+                    printf("LINE%d, CRC check fail!\r\n", __LINE__);
+                }
+
+            }
+
 
             if (need_search_in_this_frame) {
                 for (int j = start_index; (j+3) < DATASIZE; j++) {

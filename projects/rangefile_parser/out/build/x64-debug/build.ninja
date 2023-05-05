@@ -56,6 +56,13 @@ build CMakeFiles\rangefile_parser.dir\rangefile_parser.cpp.obj: CXX_COMPILER__ra
   TARGET_COMPILE_PDB = CMakeFiles\rangefile_parser.dir\
   TARGET_PDB = rangefile_parser.pdb
 
+build CMakeFiles\rangefile_parser.dir\crc32.c.obj: C_COMPILER__rangefile_parser_Debug C$:\Users\agilex\Documents\5-github-com\2-JulianLiao\4-GNSS_CR20221111_sync0429\projects\rangefile_parser\crc32.c || cmake_object_order_depends_target_rangefile_parser
+  FLAGS = /DWIN32 /D_WINDOWS /W3 /MDd /Ob0 /Od /RTC1 -ZI
+  OBJECT_DIR = CMakeFiles\rangefile_parser.dir
+  OBJECT_FILE_DIR = CMakeFiles\rangefile_parser.dir
+  TARGET_COMPILE_PDB = CMakeFiles\rangefile_parser.dir\
+  TARGET_PDB = rangefile_parser.pdb
+
 
 # =============================================================================
 # Link build statements for EXECUTABLE target rangefile_parser
@@ -64,7 +71,7 @@ build CMakeFiles\rangefile_parser.dir\rangefile_parser.cpp.obj: CXX_COMPILER__ra
 #############################################
 # Link the executable rangefile_parser.exe
 
-build rangefile_parser.exe: CXX_EXECUTABLE_LINKER__rangefile_parser_Debug CMakeFiles\rangefile_parser.dir\rangefile_parser.cpp.obj
+build rangefile_parser.exe: CXX_EXECUTABLE_LINKER__rangefile_parser_Debug CMakeFiles\rangefile_parser.dir\rangefile_parser.cpp.obj CMakeFiles\rangefile_parser.dir\crc32.c.obj
   FLAGS = /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MDd /Ob0 /Od /RTC1 -ZI
   LINK_FLAGS = /machine:x64 /debug /INCREMENTAL /subsystem:console
   LINK_LIBRARIES = kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib
