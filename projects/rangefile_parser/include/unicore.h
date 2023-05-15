@@ -24,6 +24,8 @@ extern "C" {
 #define MAX_RANGECMP_LEN      140
 #define MAX_BASERANGE_LEN     130
 
+#define FIX_LENGTH_BESTPOS_MATCHEDPOS    104
+
 typedef enum {
     CHIP_UNKNOWN = -1,
     CHIP_UM980 = 0,

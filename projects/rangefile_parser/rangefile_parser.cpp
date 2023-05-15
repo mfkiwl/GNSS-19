@@ -56,7 +56,11 @@ using namespace std;
 
 #define BASERANGE_MAX_LEN  5756
 
+#define DEBUG_LINE_START    715
+#define DEBUG_LINE_END    722
+
 uint8_t data_buf[BASERANGE_MAX_LEN] = {'\0'};
+BESTPOSData m_bestpos_data;
 RangeMeasurements curr_baserange;
 
 typedef enum {
@@ -72,9 +76,55 @@ typedef enum {
 typedef struct {
     int last_loop_cnt;
     LAST_BYTES_NUM last_bytes_num;
+    uint8_t msg_id_lo_byte;
 } LAST_FRAME_RECORD;
 
 LAST_FRAME_RECORD m_last_frame_record;
+
+uint8_t getSignalType(ChannelStatus* chnl_status) {
+    uint8_t ret = 0xff;
+    uint32_t sat_sys = chnl_status->satellite_sys;
+    uint32_t sig_type = chnl_status->signal_type;
+
+    switch (sat_sys)
+    {
+        case SatSys_GPS: {
+            if (GPS_L1CA == sig_type)
+            {
+            }
+            else if ()
+            {
+            }
+            break;
+        }
+        case SatSys_GPS: {
+            break;
+        }
+        case SatSys_GPS: {
+            break;
+        }
+        case SatSys_GPS: {
+            break;
+        }
+        case SatSys_GPS: {
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+
+void statisticsBaseStationSatellitesCN0(RangeMeasurements *baserange_data)
+{
+    for (int i = 0; i < baserange_data->observation_num; i++) {
+        printf("LINE%d, range_data[%d], locktime: %f, CN0: %d\r\n", __LINE__, i, baserange_data->range_data[i].locktime, baserange_data->range_data[i].carrier_to_noise);
+        if (baserange_data->range_data[i].locktime < 5 || baserange_data->range_data[i].carrier_to_noise < 35) {
+        
+        }
+    }
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -105,11 +155,14 @@ int main(int argc, char *argv[])
         fseek(p_file, 0, SEEK_SET);
         int loop_cnt = 0;
         int baserange_frame_cnt = 0;
+        int baserange_verified_frame_cnt = 0;
         int bestpos_frame_cnt = 0;
 
         uint16_t header_size = sizeof(GenericHeaderForBinaryMsg);
         printf("LINE%d, header_size: %d\r\n", __LINE__, header_size);
         bool check_header = false;
+
+
         uint16_t msg_id = 0;
         int baserange_curr_size = 0;
         bool need_parse = false;
@@ -137,6 +190,10 @@ int main(int argc, char *argv[])
                 printf("%02x ", buffer[k]);
             }
             printf("\r\n");
+
+            if (loop_cnt >= DEBUG_LINE_START and loop_cnt <= DEBUG_LINE_END) {
+                printf("LINE%d, loop_cnt: %d, need_parse: %d\r\n", __LINE__, loop_cnt, need_parse);
+            }
 
             if (need_parse) {
                 int local_left_size = 0;
@@ -236,11 +293,11 @@ int main(int argc, char *argv[])
                     m_last_frame_record.last_bytes_num = LAST_BYTES_BIG;
                 }
             } else {
-                if (loop_cnt == m_last_frame_record.last_loop_cnt) {
+                if (loop_cnt == (m_last_frame_record.last_loop_cnt + 1)) {
                     switch (m_last_frame_record.last_bytes_num) {
                         case LAST_BYTES_0:
                         {
-                            printf("Should never enter into this case!\r\n");
+                            printf("LINE%d, Should never enter into this case!\r\n", __LINE__);
                             start_index = 0;
                             check_header = false;
                             break;
@@ -248,13 +305,15 @@ int main(int argc, char *argv[])
                         case LAST_BYTES_1:
                         {
                             if (GEN_SYNC2 == buffer[0] && GEN_SYNC3 == buffer[1] && GEN_HEAD_LEN == buffer[2]) {
-                                printf("LAST_BYTES_1-combined success\r\n");
+                                printf("LINE%d, LAST_BYTES_1-combined success\r\n", __LINE__);
+                                check_header = true;        // 检测到帧头
                                 start_index = 3;
-                                check_header = true;
+                                    // msg_id_LO: buffer[start_index]
+                                    // msg_id_HI: buffer[start_index+1]
                             }
                             else {
-                                start_index = 0;
                                 check_header = false;
+                                start_index = 0;
                                 printf("LAST_BYTES_1-combined fail\r\n");
                             }
                             break;
@@ -263,12 +322,14 @@ int main(int argc, char *argv[])
                         {
                             if (GEN_SYNC3 == buffer[0] && GEN_HEAD_LEN == buffer[1]) {
                                 printf("LAST_BYTES_2-combined success\r\n");
+                                check_header = true;        // 检测到帧头
                                 start_index = 2;
-                                check_header = true;
+                                    // msg_id_LO: buffer[start_index]
+                                    // msg_id_HI: buffer[start_index+1]
                             }
                             else {
-                                start_index = 0;
                                 check_header = false;
+                                start_index = 0;
                                 printf("LAST_BYTES_2-combined fail\r\n");
                             }
                             break;
@@ -277,14 +338,34 @@ int main(int argc, char *argv[])
                         {
                             if (GEN_HEAD_LEN == buffer[0]) {
                                 printf("LAST_BYTES_3-combined success\r\n");
+                                check_header = true;        // 检测到帧头
                                 start_index = 1;
-                                check_header = true;
+                                    // msg_id_LO: buffer[start_index]
+                                    // msg_id_HI: buffer[start_index+1]
                             }
                             else {
+                                check_header = false;        // 没有检测到帧头
                                 start_index = 0;
-                                check_header = false;
                                 printf("LAST_BYTES_3-combined fail\r\n");
                             }
+                            break;
+                        }
+                        case LAST_BYTES_4:
+                        {
+                            check_header = true;        // 检测到帧头
+                            start_index = 0;           // 表明当前帧第1个字节为msg_id低字节，第2个字节为msg_id高字节。
+                                    // msg_id_LO: buffer[start_index]
+                                    // msg_id_HI: buffer[start_index+1]
+                            printf("LINE%d, LAST_BYTES_4\r\n", __LINE__);
+                            break;
+                        }
+                        case LAST_BYTES_5:
+                        {
+                            check_header = true;        // 检测到帧头
+                            start_index = -1;           // 表明msg_id 低字节在上一帧，高字节在当前帧。
+                                    // msg_id_LO: m_last_frame_record.msg_id_lo_byte
+                                    // msg_id_HI: buffer[start_index+1]
+                            printf("LINE%d, LAST_BYTES_5\r\n", __LINE__);
                             break;
                         }
                         default:
@@ -301,153 +382,87 @@ int main(int argc, char *argv[])
                     check_header = false;
                 }
     
-                if (716 == loop_cnt) {
+                if (loop_cnt >= DEBUG_LINE_START and loop_cnt <= DEBUG_LINE_END) {
                     printf("LINE%d, start_index: %d, check_header: %d, need_parse: %d\r\n", __LINE__, start_index, check_header, need_parse);
                     printf("LINE%d, last_loop_cnt: %d, last_bytes_num: %d\r\n", __LINE__, m_last_frame_record.last_loop_cnt, m_last_frame_record.last_bytes_num);
                 }
-                for (int j = start_index; (j+5) < DATASIZE; j++) {
-                    if (true == check_header && start_index > 0 && start_index <= 3) {
-                        msg_id = (uint16_t)(((uint16_t)buffer[j + 1]) << 8) + buffer[j];
-                    }
-                    if (GEN_SYNC1 == buffer[j] && GEN_SYNC2 == buffer[j + 1] && GEN_SYNC3 == buffer[j + 2] && GEN_HEAD_LEN == buffer[j + 3]) {
-                        check_header = true;
-                        msg_id = (uint16_t)(((uint16_t)buffer[j + 5]) << 8) + buffer[j + 4];
-                        if (716 == loop_cnt) {
-                            printf("LINE%d, j: %d, check_header success, msg_id: %d\r\n", __LINE__, j, msg_id);
-                        }
-                    }
 
-                    if (check_header) {
-                        check_header = false;
-                        switch (msg_id) {
-                            case MSG_ID_BASERANGE:
-                            {
-                                baserange_frame_cnt++;
-                                printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index), buffer[j+header_size-start_index]);
-                                printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index+1), buffer[j+header_size-start_index+1]);
-                                printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index+2), buffer[j+header_size-start_index+2]);
-                                printf("LINE%d, buffer[%d]: %02x\r\n", __LINE__, (j+header_size-start_index+3), buffer[j+header_size-start_index+3]);
-                                memcpy(&curr_baserange.range_header, &buffer[j-start_index], header_size);
-                                memcpy(&curr_baserange.observation_num, &buffer[j-start_index+header_size], 4);
-                                baserange_curr_size = 36 + (44 * curr_baserange.observation_num);
-                                int curr_frame_valid_size = 1024 - (j-start_index);
-                                int local_data_size = curr_frame_valid_size - header_size - 4;
-                                observation_num_idx = local_data_size / 44;
-                                br_sub_item_size = local_data_size % 44;
-                                memcpy(&curr_baserange.range_data[0], &buffer[j+header_size-start_index+4], observation_num_idx * 44);
-                                memcpy(&combined_buf[0], &buffer[ELEMENTSIZE-br_sub_item_size], br_sub_item_size);
-
-                                if (baserange_curr_size > curr_frame_valid_size) {
-                                    is_get_whole_frame = false;
-                                    need_parse = true;
-                                    need_search_in_this_frame = false;        // Need parse in next frame, no need to search in this frame
-                                    need_parse_left_size = baserange_curr_size - curr_frame_valid_size;
-                                }
-                                printf("LINE%d, baserange_curr_size: %d, curr_frame_valid_size: %d, need_parse: %d, need_parse_left_size: %d\r\n", __LINE__, baserange_curr_size, curr_frame_valid_size, need_parse, need_parse_left_size);
-                                printf("LINE%d, start_index: %d, br_obs_num: %d\r\n", __LINE__, start_index, curr_baserange.observation_num);
-                                printf("LINE%d, loop_cnt: %d, j: %d, start_index: %d, baserange_frame_cnt: %d\r\n", __LINE__, loop_cnt, j, start_index, baserange_frame_cnt);
-                                break;
+                if (check_header) {        /* 已检测到帧头 */
+                    uint8_t tmp_header[28] = {'\0'};
+                    memset(tmp_header, '\0', 28);
+                    tmp_header[0] = GEN_SYNC1;
+                    tmp_header[1] = GEN_SYNC2;
+                    tmp_header[2] = GEN_SYNC3;
+                    tmp_header[3] = GEN_HEAD_LEN;
+                    if (-1 == start_index) {    /* 说明是 LAST_BYTES_5 */
+                        msg_id = (uint16_t)(((uint16_t)buffer[start_index+1]) << 8) + m_last_frame_record.msg_id_lo_byte;
+                    } else if (start_index >=0 and start_index <= 3) {
+                        msg_id = (uint16_t)(((uint16_t)buffer[start_index+1]) << 8) + buffer[start_index];
+                    }
+                    switch (msg_id) {
+                        case MSG_ID_BASERANGE:
+                        {
+                            baserange_frame_cnt++;
+                            if (-1 == start_index) {
+                                tmp_header[4] = m_last_frame_record.msg_id_lo_byte;
                             }
-                            case MSG_ID_BESTPOS:
-                            {
-                                bestpos_frame_cnt++;
-                                break;
+                            memcpy(&tmp_header[4-start_index], &buffer[0], header_size-(4-start_index));
+                            memcpy(&curr_baserange.range_header, &tmp_header[0], header_size);
+                            memcpy(&curr_baserange.observation_num, &buffer[header_size-(4-start_index)], 4);
+                            baserange_curr_size = 36 + (44 * curr_baserange.observation_num);
+                            int curr_frame_valid_size = 1024;
+                            int local_data_size = curr_frame_valid_size - (header_size - (4 - start_index)) - 4;
+                            observation_num_idx = local_data_size / 44;
+                            br_sub_item_size = local_data_size % 44;
+                            memcpy(&curr_baserange.range_data[0], &buffer[header_size+start_index], observation_num_idx * 44);
+                            memcpy(&combined_buf[0], &buffer[ELEMENTSIZE-br_sub_item_size], br_sub_item_size);
+                            if (baserange_curr_size > curr_frame_valid_size) {
+                                is_get_whole_frame = false;
+                                need_parse = true;
+                                need_parse_left_size = baserange_curr_size - curr_frame_valid_size - (4 - start_index);
+                                need_search_in_this_frame = false;        // Need parse in next frame, no need to search in this frame
+                            } else {
+                                is_get_whole_frame = true;
+                                need_parse = false;        // 当前帧已完成拷贝，无须解析下一帧
+                                need_parse_left_size = 0;
+                                need_search_in_this_frame = true;        // Need parse in next frame, no need to search in this frame
+                                start_index = curr_frame_valid_size - baserange_curr_size;
                             }
-                            default: {
-                                break;
-                            }
+                            printf("LINE%d, baserange_curr_size: %d, curr_frame_valid_size: %d, need_parse: %d, need_parse_left_size: %d\r\n", __LINE__, baserange_curr_size, curr_frame_valid_size, need_parse, need_parse_left_size);
+                            printf("LINE%d, loop_cnt: %d, baserange_frame_cnt: %d, start_index: %d, br_obs_num: %d\r\n", __LINE__, loop_cnt, baserange_frame_cnt, start_index, curr_baserange.observation_num);
+                            break;
                         }
-                    }    
-                    if (716 == loop_cnt) {
-                        printf("LINE%d, j: %d, need_parse: %d\r\n", __LINE__, j, need_parse);
+                        case MSG_ID_BESTPOS:
+                        {
+                            bestpos_frame_cnt++;
+                            memcpy(&tmp_header[4-start_index], &buffer[0], header_size-(4-start_index));
+                            memcpy(&m_bestpos_data.data[0], &tmp_header[0], header_size);
+                            memcpy(&m_bestpos_data.data[header_size], &buffer[header_size-(4-start_index)], FIX_LENGTH_BESTPOS_MATCHEDPOS-header_size);
+                            need_search_in_this_frame = true;
+                            start_index = FIX_LENGTH_BESTPOS_MATCHEDPOS - start_index;
+                            break;
+                        }
+                        default: {
+                            break;
+                        }
                     }
-                    if (need_parse) {
-                        break;
+                    if (!need_parse) {
+                        start_index = 0;
                     }
+                    if (loop_cnt >= DEBUG_LINE_START and loop_cnt <= DEBUG_LINE_END) {
+                        printf("LINE%d, need_parse: %d\r\n", __LINE__, need_parse);
+                    }
+                } else {        /* 没有检测到帧头 */
+                    start_index = 0;
+                    need_parse = false;
+                    need_search_in_this_frame = true;
                 }
-    
-                if (!need_parse) {
-                    for (int m = (DATASIZE - 5); m < DATASIZE; m++) {
-                        if (GEN_SYNC1 == buffer[m]) {
-                            printf("--buffer[%d]: 0x%02x\r\n", m, buffer[m]);
-                            switch (m) {
-                                case (ELEMENTSIZE - 5):    // 1019
-                                {
-                                    if (GEN_SYNC2 == buffer[m+1] && GEN_SYNC3 == buffer[m+2]) {
-                                        printf("--AA--buffer[%d]: 0x%02x\r\n", m, buffer[m]);
-                                        m_last_frame_record.last_loop_cnt = loop_cnt;
-                                        m_last_frame_record.last_bytes_num = LAST_BYTES_3;
-                                    }
-                                    else {
-                                        m_last_frame_record.last_loop_cnt = -1;
-                                        m_last_frame_record.last_bytes_num = LAST_BYTES_0;
-                                    }
-                                    break;
-                                }
-                                case (DATASIZE - 4):
-                                {
-                                    if (GEN_SYNC2 == buffer[m+1] && GEN_SYNC3 == buffer[m+2]) {
-                                        printf("--AA--buffer[%d]: 0x%02x\r\n", m, buffer[m]);
-                                        m_last_frame_record.last_loop_cnt = loop_cnt;
-                                        m_last_frame_record.last_bytes_num = LAST_BYTES_3;
-                                    }
-                                    else {
-                                        m_last_frame_record.last_loop_cnt = -1;
-                                        m_last_frame_record.last_bytes_num = LAST_BYTES_0;
-                                    }
-                                    break;
-                                }
-                                case (DATASIZE - 3):
-                                {
-                                    if (GEN_SYNC2 == buffer[m+1] && GEN_SYNC3 == buffer[m+2]) {
-                                        printf("--AA--buffer[%d]: 0x%02x\r\n", m, buffer[m]);
-                                        m_last_frame_record.last_loop_cnt = loop_cnt;
-                                        m_last_frame_record.last_bytes_num = LAST_BYTES_3;
-                                    }
-                                    else {
-                                        m_last_frame_record.last_loop_cnt = -1;
-                                        m_last_frame_record.last_bytes_num = LAST_BYTES_0;
-                                    }
-                                    break;
-                                }
-                                case (DATASIZE - 2):
-                                {
-                                    if (GEN_SYNC2 == buffer[m + 1]) {
-                                        printf("--BB--buffer[%d]: 0x%02x\r\n", m, buffer[m]);
-                                        m_last_frame_record.last_loop_cnt = loop_cnt;
-                                        m_last_frame_record.last_bytes_num = LAST_BYTES_2;
-                                    }
-                                    else {
-                                        m_last_frame_record.last_loop_cnt = -1;
-                                        m_last_frame_record.last_bytes_num = LAST_BYTES_0;
-                                    }
-                                    break;
-                                }
-                                case (DATASIZE - 1):
-                                {
-                                    printf("--CC--buffer[%d]: 0x%02x\r\n", m, buffer[m]);
-                                    m_last_frame_record.last_loop_cnt = loop_cnt;
-                                    m_last_frame_record.last_bytes_num = LAST_BYTES_1;
-                                    break;
-                                }
-                                default: {
-                                    m_last_frame_record.last_loop_cnt = -1;
-                                    m_last_frame_record.last_bytes_num = LAST_BYTES_0;
-                                    printf("Unexpected value: %d\r\n", m);
-                                    break;
-                                }
-                            }
-                        }
-                        else {
-                            printf("LINE%d, 0xAA not found when m=%d\r\n", __LINE__, m);
-                            m_last_frame_record.last_loop_cnt = -1;
-                            m_last_frame_record.last_bytes_num = LAST_BYTES_0;
-                        }
-                    }
-                }
+                m_last_frame_record.last_loop_cnt = -1;
+                m_last_frame_record.last_bytes_num = LAST_BYTES_0;
+                m_last_frame_record.msg_id_lo_byte = 0xff;
             }
 
-            if (716 == loop_cnt) {
+            if (loop_cnt >= DEBUG_LINE_START and loop_cnt <= DEBUG_LINE_END) {
                 printf("LINE%d, is_get_whole_frame: %d\r\n", __LINE__, is_get_whole_frame);
             }
             if (is_get_whole_frame) {
@@ -469,6 +484,7 @@ int main(int argc, char *argv[])
                 if (check_crc_ret == true)
                 {
                     printf("LINE%d, CRC check pass!\r\n", __LINE__);
+                    baserange_verified_frame_cnt++;
                     is_get_whole_frame = false;
                     memset(&curr_baserange.range_header, '\0', header_size);
                     memset(&curr_baserange.observation_num, '\0', 4);
@@ -479,34 +495,18 @@ int main(int argc, char *argv[])
                 else {
                     printf("LINE%d, CRC check fail!\r\n", __LINE__);
                 }
-
             }
 
-            if (716 == loop_cnt) {
-                printf("LINE%d, need_search_in_this_frame: %d\r\n", __LINE__, need_search_in_this_frame);
+            if (loop_cnt >= DEBUG_LINE_START && loop_cnt <= DEBUG_LINE_END) {
+                printf("LINE%d, need_search_in_this_frame: %d, start_index: %d\r\n", __LINE__, need_search_in_this_frame, start_index);
             }
             if (need_search_in_this_frame) {
                 check_header = false;
-                for (int j = start_index; (j+3) < DATASIZE; j++) {
-                    if (0 == start_index) {
-                        if (GEN_SYNC1 == buffer[j] && GEN_SYNC2 == buffer[j + 1] && GEN_SYNC3 == buffer[j + 2] && GEN_HEAD_LEN == buffer[j + 3]) {
-                            check_header = true;
-                            msg_id = (uint16_t)(((uint16_t)buffer[j + 5]) << 8) + buffer[j + 4];
-                        }
+                for (int j = start_index; (j+5) < DATASIZE; j++) {
+                    if (GEN_SYNC1 == buffer[j] && GEN_SYNC2 == buffer[j + 1] && GEN_SYNC3 == buffer[j + 2] && GEN_HEAD_LEN == buffer[j + 3]) {
+                        check_header = true;
+                        msg_id = (uint16_t)(((uint16_t)buffer[j + 5]) << 8) + buffer[j + 4];
                     }
-                    else if (loop_cnt == m_last_frame_record.last_loop_cnt) {
-                        if (LAST_BYTES_1 == m_last_frame_record.last_bytes_num || LAST_BYTES_2 == m_last_frame_record.last_bytes_num || LAST_BYTES_3 == m_last_frame_record.last_bytes_num) {
-                            check_header = true;
-                            msg_id = (uint16_t)(((uint16_t)buffer[j + 1]) << 8) + buffer[j];
-                        }
-                        else if (LAST_BYTES_BIG == m_last_frame_record.last_bytes_num) {
-                            if (GEN_SYNC1 == buffer[j] && GEN_SYNC2 == buffer[j + 1] && GEN_SYNC3 == buffer[j + 2] && GEN_HEAD_LEN == buffer[j + 3]) {
-                                check_header = true;
-                                msg_id = (uint16_t)(((uint16_t)buffer[j + 5]) << 8) + buffer[j + 4];
-                            }
-                        }
-                    }
-                    
 
                     if (check_header) {
                         switch (msg_id) {
@@ -524,16 +524,21 @@ int main(int argc, char *argv[])
                                 int local_data_size = curr_frame_valid_size - header_size - 4;
                                 observation_num_idx = local_data_size / 44;
                                 br_sub_item_size = local_data_size % 44;
-                                memcpy(&curr_baserange.range_data[0], &buffer[j+header_size-start_index+4], curr_frame_valid_size - header_size - 4);
-                                // memcpy(&data_buf[0], &buffer[j], curr_frame_valid_size);
 
-                                
                                 if (baserange_curr_size > curr_frame_valid_size) {
+                                    memcpy(&curr_baserange.range_data[0], &buffer[j+header_size-start_index+4], curr_frame_valid_size - header_size - 4);
+                                    memcpy(&combined_buf[0], &buffer[ELEMENTSIZE-br_sub_item_size], br_sub_item_size);
+                                    is_get_whole_frame = false;
                                     need_parse = true;
                                     need_parse_left_size = baserange_curr_size - curr_frame_valid_size;
+                                    need_search_in_this_frame = false;
                                 } else {
+                                    memcpy(&curr_baserange.range_data[0], &buffer[j+header_size-start_index+4], (baserange_curr_size-header_size-4));
+                                    is_get_whole_frame = true;
                                     need_parse = false;
                                     need_parse_left_size = 0;
+                                    need_search_in_this_frame = true;
+                                    start_index = curr_frame_valid_size - baserange_curr_size;
                                 }
                                 printf("LINE%d, baserange_curr_size: %d, curr_frame_valid_size: %d, need_parse: %d, need_parse_left_size: %d\r\n", __LINE__, baserange_curr_size, curr_frame_valid_size, need_parse, need_parse_left_size);
                                 printf("LINE%d, start_index: %d, br_obs_num: %d\r\n", __LINE__, start_index, curr_baserange.observation_num);
@@ -557,61 +562,102 @@ int main(int argc, char *argv[])
                 }
     
                 if (!need_parse) {
-                    for (int m = (DATASIZE - 3); m < DATASIZE; m++) {
+                    for (int m = (DATASIZE - 5); m < DATASIZE; m++) {
                         if (GEN_SYNC1 == buffer[m]) {
                             printf("--buffer[%d]: 0x%02x\r\n", m, buffer[m]);
                             switch (m) {
-                                case (DATASIZE - 3):
+                                case (DATASIZE - 5):
                                 {
-                                    if (GEN_SYNC2 == buffer[m+1] && GEN_SYNC3 == buffer[m+2]) {
+                                    if (GEN_SYNC2 == buffer[m+1] && GEN_SYNC3 == buffer[m+2] && GEN_HEAD_LEN == buffer[m+3]) {
                                         printf("--AA--buffer[%d]: 0x%02x\r\n", m, buffer[m]);
                                         m_last_frame_record.last_loop_cnt = loop_cnt;
-                                        m_last_frame_record.last_bytes_num = LAST_BYTES_3;
+                                        m_last_frame_record.last_bytes_num = LAST_BYTES_5;
+                                        m_last_frame_record.msg_id_lo_byte = buffer[m+4];
                                     }
                                     else {
                                         m_last_frame_record.last_loop_cnt = -1;
                                         m_last_frame_record.last_bytes_num = LAST_BYTES_0;
+                                        m_last_frame_record.msg_id_lo_byte = 0xff;
+                                    }
+                                    break;
+                                }
+                                case (DATASIZE - 4):
+                                {
+                                    if (GEN_SYNC2 == buffer[m+1] && GEN_SYNC3 == buffer[m+2] && GEN_HEAD_LEN == buffer[m+3]) {
+                                        printf("--BB--buffer[%d]: 0x%02x\r\n", m, buffer[m]);
+                                        m_last_frame_record.last_loop_cnt = loop_cnt;
+                                        m_last_frame_record.last_bytes_num = LAST_BYTES_4;
+                                        m_last_frame_record.msg_id_lo_byte = 0xff;
+                                    }
+                                    else {
+                                        m_last_frame_record.last_loop_cnt = -1;
+                                        m_last_frame_record.last_bytes_num = LAST_BYTES_0;
+                                        m_last_frame_record.msg_id_lo_byte = 0xff;
+                                    }
+                                    break;
+                                }
+                                case (DATASIZE - 3):
+                                {
+                                    if (GEN_SYNC2 == buffer[m+1] && GEN_SYNC3 == buffer[m+2]) {
+                                        printf("--CC--buffer[%d]: 0x%02x\r\n", m, buffer[m]);
+                                        m_last_frame_record.last_loop_cnt = loop_cnt;
+                                        m_last_frame_record.last_bytes_num = LAST_BYTES_3;
+                                        m_last_frame_record.msg_id_lo_byte = 0xff;
+                                    }
+                                    else {
+                                        m_last_frame_record.last_loop_cnt = -1;
+                                        m_last_frame_record.last_bytes_num = LAST_BYTES_0;
+                                        m_last_frame_record.msg_id_lo_byte = 0xff;
                                     }
                                     break;
                                 }
                                 case (DATASIZE - 2):
                                 {
                                     if (GEN_SYNC2 == buffer[m + 1]) {
-                                        printf("--BB--buffer[%d]: 0x%02x\r\n", m, buffer[m]);
+                                        printf("--DD--buffer[%d]: 0x%02x\r\n", m, buffer[m]);
                                         m_last_frame_record.last_loop_cnt = loop_cnt;
                                         m_last_frame_record.last_bytes_num = LAST_BYTES_2;
+                                        m_last_frame_record.msg_id_lo_byte = 0xff;
                                     }
                                     else {
                                         m_last_frame_record.last_loop_cnt = -1;
                                         m_last_frame_record.last_bytes_num = LAST_BYTES_0;
+                                        m_last_frame_record.msg_id_lo_byte = 0xff;
                                     }
                                     break;
                                 }
                                 case (DATASIZE - 1):
                                 {
-                                    printf("--CC--buffer[%d]: 0x%02x\r\n", m, buffer[m]);
+                                    printf("--EE--buffer[%d]: 0x%02x\r\n", m, buffer[m]);
                                     m_last_frame_record.last_loop_cnt = loop_cnt;
                                     m_last_frame_record.last_bytes_num = LAST_BYTES_1;
+                                    m_last_frame_record.msg_id_lo_byte = 0xff;
                                     break;
                                 }
                                 default: {
                                     m_last_frame_record.last_loop_cnt = -1;
                                     m_last_frame_record.last_bytes_num = LAST_BYTES_0;
-                                    printf("Unexpected value: %d\r\n", m);
+                                    m_last_frame_record.msg_id_lo_byte = 0xff;
+                                    printf("LINE%d, Unexpected value: %d\r\n", __LINE__, m);
                                     break;
                                 }
+                            }
+                            if (loop_cnt == m_last_frame_record.last_loop_cnt) {
+                                break;
                             }
                         }
                         else {
                             m_last_frame_record.last_loop_cnt = -1;
                             m_last_frame_record.last_bytes_num = LAST_BYTES_0;
+                            m_last_frame_record.msg_id_lo_byte = 0xff;
                         }
                     }
                 }
             }
 
             loop_cnt++;
-            printf("loop_cnt: %d, baserange_frame_cnt: %d, bestpos_frame_cnt: %d\r\n", loop_cnt, baserange_frame_cnt, bestpos_frame_cnt);
+            printf("loop_cnt: %d, baserange_frame_cnt: %d, baserange_verified_frame_cnt: %d, bestpos_frame_cnt: %d\r\n", \
+                loop_cnt, baserange_frame_cnt, baserange_verified_frame_cnt, bestpos_frame_cnt);
         }
         return 0;
     } else {
