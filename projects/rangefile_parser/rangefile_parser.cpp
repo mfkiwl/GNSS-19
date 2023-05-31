@@ -65,10 +65,26 @@ RangeMeasurements curr_baserange;
 UNCBESTSATSMsg curr_bestsats;
 
 typedef enum {
-
-
+    PARSING_INIT = 0,
+    FIND_HEADER = 1,
+    FOUND_HEADER = 2,
+    NEED_PARSE_BESTPOS_BODY = 3,
+    NEED_PARSE_BASERANGE_BODY = 4,
+    NEED_PARSE_BESTSATS_BODY = 5,
+    NEED_PARSE_RANGECMP_BODY = 6,
+    PARSE_BESTPOS_DONE = 7,
+    PARSE_BASERANGE_DONE = 8,
+    PARSE_BESTSATS_DONE = 9,
+    PARSE_RANGECMP_DONE = 10,
+    PARSE_STATE_NUM = 11,
 } PARSING_STATE;
 
+typedef struct {
+    PARSING_STATE parsing_state;
+    uint32_t total_frame_len;        // total_frame_len = had_parsed_len + need_parse_len
+    uint32_t had_parsed_len;
+    uint32_t need_parse_len;
+};
 
 
 typedef enum {
