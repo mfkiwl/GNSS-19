@@ -26,8 +26,9 @@
 系统日志里的 utc时间：0317-17:27:35.381
 根据GPST计算的 utc时间：0317-17:27:34.500，相差了881msec。
 
+可以去 https://www.labsat.co.uk/index.php/en/gps-time-calculator 将gps时间转换成utc 时间。
 
-
+![gpst_utc_conversion](images/Luba_systime_gnsstime/gps_time_calculator.png "gpst_utc_conversion")
 
 
 1 开机时时间同步
