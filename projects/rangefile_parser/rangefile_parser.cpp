@@ -62,6 +62,14 @@ using namespace std;
 uint8_t data_buf[BASERANGE_MAX_LEN] = {'\0'};
 BESTPOSData m_bestpos_data;
 RangeMeasurements curr_baserange;
+UNCBESTSATSMsg curr_bestsats;
+
+typedef enum {
+
+
+} PARSING_STATE;
+
+
 
 typedef enum {
     LAST_BYTES_0,
@@ -91,40 +99,154 @@ uint8_t getSignalType(ChannelStatus* chnl_status) {
         case SatSys_GPS: {
             if (GPS_L1CA == sig_type)
             {
+                ret = 1;
             }
-            else if ()
+            else if (GPS_L2P_W == sig_type || GPS_L2C == sig_type || GPS_L2P == sig_type)
             {
+                ret = 2;
             }
             break;
         }
-        case SatSys_GPS: {
+        case SatSys_QZSS: {
+            if (QZSS_L1C == sig_type)
+            {
+                ret = 1;
+            }
+            else if (QZSS_L2P == sig_type || QZSS_L2C == sig_type)
+            {
+                ret = 2;
+            }
             break;
         }
-        case SatSys_GPS: {
+        case SatSys_GLONASS: {
+            if (GLO_L1C == sig_type)
+            {
+                ret = 1;
+            }
+            else if (GLO_L2C == sig_type)
+            {
+                ret = 2;
+            }
             break;
         }
-        case SatSys_GPS: {
+        case SatSys_SBAS: {
+            if (SBAS_L1CA == sig_type)
+            {
+                ret = 1;
+            }
+            if (SBAS_L5_DATA == sig_type)
+            {
+                ret = 2;
+            }
             break;
         }
-        case SatSys_GPS: {
+        case SatSys_GAL: {
+            if (GAL_E1B == sig_type || GAL_E1C == sig_type || GAL_E5AQ == sig_type)
+            {
+                ret = 1;
+            }
+            else if (GAL_E5AQ == sig_type || GAL_E5BQ == sig_type)
+            {
+                ret = 2;
+            }
+            break;
+        }
+        case SatSys_BDS: {
+            if (BDS_B1I == sig_type || BDS_B1Q == sig_type || BDS_B1CQ == sig_type || BDS_B1C_DATA == sig_type)
+            {
+                ret = 1;
+            }
+            else if (BDS_B2Q == sig_type || BDS_B2AQ == sig_type || BDS_B2B == sig_type || BDS_B2I == sig_type || BDS_B2A_DATA == sig_type)
+            {
+                ret = 2;
+            }
             break;
         }
         default:
+        {
+            ret = 0xff;
             break;
+        }
     }
+
+    return ret;
 }
 
 
 void statisticsBaseStationSatellitesCN0(RangeMeasurements *baserange_data)
 {
+    float top4_cn0[4] = { 0.0, 0.0, 0.0, 0.0 };    // 从小到大顺序
+    float acc_cn0 = 0.0;
+    uint32_t acc_cn0_count = 0;
+
+    uint32_t satellites_of_l1 = 0;
+    uint32_t satellites_of_l2 = 0;
     for (int i = 0; i < baserange_data->observation_num; i++) {
         printf("LINE%d, range_data[%d], locktime: %f, CN0: %d\r\n", __LINE__, i, baserange_data->range_data[i].locktime, baserange_data->range_data[i].carrier_to_noise);
-        if (baserange_data->range_data[i].locktime < 5 || baserange_data->range_data[i].carrier_to_noise < 35) {
-        
+        if (baserange_data->range_data[i].locktime < 5 || baserange_data->range_data[i].carrier_to_noise < 30) {
+            continue;
+        }
+
+        uint8_t signal_type = getSignalType(&(baserange_data->range_data[i].channel_status));
+        if (1 == signal_type) {
+            satellites_of_l1++;
+        }
+        else if (2 == signal_type) {
+            satellites_of_l2++;
+        }
+
+        // 选取CN0最高的4个item，并且求所有items总的CN0
+        acc_cn0 += baserange_data->range_data[i].carrier_to_noise;
+        acc_cn0_count++;
+
+        int32_t m, n;
+        float tmp1, tmp2;
+        for (m = 3; m >= 0; m--)
+        {
+            if (baserange_data->range_data[i].carrier_to_noise >= top4_cn0[m])
+            {
+                tmp1 = top4_cn0[m];
+                top4_cn0[m] = baserange_data->range_data[i].carrier_to_noise;
+                for (n = m-1; n >= 0; n--)
+                {
+                    tmp2 = top4_cn0[n];
+                    top4_cn0[n] = tmp1;
+                    tmp1 = tmp2;
+                }
+                break;
+            }
         }
     }
-}
 
+    // 求平均
+    float top4_mean = 0.0f;
+    float acc_mean = 0.0f;
+    if (acc_cn0_count > 0)
+    {
+        top4_mean = (top4_cn0[0] + top4_cn0[1] + top4_cn0[2] + top4_cn0[3]) / 4;
+        acc_mean = acc_cn0 / acc_cn0_count;
+    }
+
+    signal_quality_e signal_quality;
+    if (top4_mean >= 45.5f && acc_mean >= 42.0f)
+    {
+        signal_quality = SIGNAL_QUALITY_GOOD;
+    }
+    else if (top4_mean >= 44.25f && acc_mean > 38.2f)
+    {
+        signal_quality = SIGNAL_QUALITY_NORMAL;
+    }
+    else if (top4_mean == 0 || acc_mean == 0)
+    {
+        signal_quality = SIGNAL_QUALITY_NONE;
+    }
+    else
+    {
+        signal_quality = SIGNAL_QUALITY_BAD;
+    }
+
+    printf("acc_cn0_count: %d, top4_mean: %f, acc_mean: %f, sig_qual: %d\r\n", acc_cn0_count, top4_mean, acc_mean, signal_quality);
+}
 
 int main(int argc, char *argv[])
 {
@@ -157,6 +279,10 @@ int main(int argc, char *argv[])
         int baserange_frame_cnt = 0;
         int baserange_verified_frame_cnt = 0;
         int bestpos_frame_cnt = 0;
+        int rangecmp_frame_cnt = 0;
+        int rangecmp_verified_frame_cnt = 0;
+        int bestsats_frame_cnt = 0;
+        int bestsats_verified_frame_cnt = 0;
 
         uint16_t header_size = sizeof(GenericHeaderForBinaryMsg);
         printf("LINE%d, header_size: %d\r\n", __LINE__, header_size);
@@ -165,10 +291,16 @@ int main(int argc, char *argv[])
 
         uint16_t msg_id = 0;
         int baserange_curr_size = 0;
+        int baserange_sub_item_size = 0;
+        int baserange_observation_num_idx = 0;
+
+
+        int bestsats_curr_size = 0;
+        int bestsats_sub_item_size = 0;
+        int bestsats_obs_num_idx = 0;
+
         bool need_parse = false;
         int need_parse_left_size = 0;
-        int observation_num_idx = 0;
-        int br_sub_item_size = 0;
         bool need_search_in_this_frame = false;
         int start_index = 0;
         printf("size_of_buffer: %d\r\n", (int)sizeof(buffer));
@@ -199,84 +331,84 @@ int main(int argc, char *argv[])
                 int local_left_size = 0;
                 int local_left_obs_num = 0;
                 if (need_parse_left_size > ELEMENTSIZE) {
-                    printf("LINE%d, observation_num_idx: %d, br_sub_item_size: %d\r\n", __LINE__, observation_num_idx, br_sub_item_size);
-                    memcpy(&combined_buf[br_sub_item_size], &buffer[0], (44 - br_sub_item_size));
-                    memcpy(&curr_baserange.range_data[observation_num_idx], &combined_buf[0], 44);
+                    printf("LINE%d, baserange_observation_num_idx: %d, baserange_sub_item_size: %d\r\n", __LINE__, baserange_observation_num_idx, baserange_sub_item_size);
+                    memcpy(&combined_buf[baserange_sub_item_size], &buffer[0], (44 - baserange_sub_item_size));
+                    memcpy(&curr_baserange.range_data[baserange_observation_num_idx], &combined_buf[0], 44);
                     memset(combined_buf, '\0', 44);
-                    local_left_size = ELEMENTSIZE - (44 - br_sub_item_size);
+                    local_left_size = ELEMENTSIZE - (44 - baserange_sub_item_size);
                     local_left_obs_num = local_left_size / 44;
-                    memcpy((&curr_baserange.range_data[observation_num_idx+1]), &buffer[44-br_sub_item_size], 44 * local_left_obs_num);
+                    memcpy((&curr_baserange.range_data[baserange_observation_num_idx+1]), &buffer[44-baserange_sub_item_size], 44 * local_left_obs_num);
                     printf("\r\n");
-                    printf("LINE%d, print range_data[%d]\r\n", __LINE__, observation_num_idx);
+                    printf("LINE%d, print range_data[%d]\r\n", __LINE__, baserange_observation_num_idx);
                     uint8_t tmp_debug_data[44] = {'\0'};
                     memset(tmp_debug_data, '\0', 44);
-                    memcpy(tmp_debug_data, &curr_baserange.range_data[observation_num_idx], 44);
+                    memcpy(tmp_debug_data, &curr_baserange.range_data[baserange_observation_num_idx], 44);
                     for (int y = 0; y < 44; y++) {
                         printf("%02x ", tmp_debug_data[y]);
                     }
                     printf("\r\n");
-                    br_sub_item_size = local_left_size % 44;
-                    memcpy((&combined_buf[0]), &buffer[ELEMENTSIZE-br_sub_item_size], br_sub_item_size);
-                    observation_num_idx = observation_num_idx + 1 + local_left_obs_num;
-                    printf("LINE%d, local_left_size: %d, local_left_obs_num: %d, br_sub_item_size: %d, observation_num_idx: %d\r\n", \
-                        __LINE__, local_left_size, local_left_obs_num, br_sub_item_size, observation_num_idx);
+                    baserange_sub_item_size = local_left_size % 44;
+                    memcpy((&combined_buf[0]), &buffer[ELEMENTSIZE-baserange_sub_item_size], baserange_sub_item_size);
+                    baserange_observation_num_idx = baserange_observation_num_idx + 1 + local_left_obs_num;
+                    printf("LINE%d, local_left_size: %d, local_left_obs_num: %d, baserange_sub_item_size: %d, baserange_observation_num_idx: %d\r\n", \
+                        __LINE__, local_left_size, local_left_obs_num, baserange_sub_item_size, baserange_observation_num_idx);
                     need_parse = true;
                     is_get_whole_frame = false;
                     need_parse_left_size = need_parse_left_size - ELEMENTSIZE;
                     need_search_in_this_frame = false;
-                    printf("LINE%d, need_parse_left_size: %d, observation_num_idx: %d, br_sub_item_size: %d\r\n", \
-                        __LINE__, need_parse_left_size, observation_num_idx, br_sub_item_size);
+                    printf("LINE%d, need_parse_left_size: %d, baserange_observation_num_idx: %d, baserange_sub_item_size: %d\r\n", \
+                        __LINE__, need_parse_left_size, baserange_observation_num_idx, baserange_sub_item_size);
                 } else if (need_parse_left_size == ELEMENTSIZE) {
-                    printf("LINE%d, observation_num_idx: %d, br_sub_item_size: %d\r\n", __LINE__, observation_num_idx, br_sub_item_size);
-                    memcpy(&combined_buf[br_sub_item_size], &buffer[0], (44 - br_sub_item_size));
-                    memcpy(&curr_baserange.range_data[observation_num_idx], &combined_buf[0], 44);
+                    printf("LINE%d, baserange_observation_num_idx: %d, baserange_sub_item_size: %d\r\n", __LINE__, baserange_observation_num_idx, baserange_sub_item_size);
+                    memcpy(&combined_buf[baserange_sub_item_size], &buffer[0], (44 - baserange_sub_item_size));
+                    memcpy(&curr_baserange.range_data[baserange_observation_num_idx], &combined_buf[0], 44);
                     memset(combined_buf, '\0', 44);
-                    local_left_size = ELEMENTSIZE - (44 - br_sub_item_size);
+                    local_left_size = ELEMENTSIZE - (44 - baserange_sub_item_size);
                     local_left_obs_num = local_left_size / 44;
-                    br_sub_item_size = local_left_size % 44;
-                    memcpy((&curr_baserange.range_data[observation_num_idx+1]), &buffer[44-br_sub_item_size], 44 * local_left_obs_num);
+                    baserange_sub_item_size = local_left_size % 44;
+                    memcpy((&curr_baserange.range_data[baserange_observation_num_idx+1]), &buffer[44-baserange_sub_item_size], 44 * local_left_obs_num);
                     memcpy(&curr_baserange.crc, &buffer[ELEMENTSIZE-4], 4);
-                    observation_num_idx = observation_num_idx + 1 + local_left_obs_num;
-                    printf("LINE%d, local_left_size: %d, local_left_obs_num: %d, br_sub_item_size: %d, observation_num_idx: %d\r\n", \
-                        __LINE__, local_left_size, local_left_obs_num, br_sub_item_size, observation_num_idx);
+                    baserange_observation_num_idx = baserange_observation_num_idx + 1 + local_left_obs_num;
+                    printf("LINE%d, local_left_size: %d, local_left_obs_num: %d, baserange_sub_item_size: %d, baserange_observation_num_idx: %d\r\n", \
+                        __LINE__, local_left_size, local_left_obs_num, baserange_sub_item_size, baserange_observation_num_idx);
                     printf("LINE%d, Received crc0: %02x, crc1: %02x, crc2: %02x, crc3: %02x\r\n", \
                         __LINE__, curr_baserange.crc[0], curr_baserange.crc[1], curr_baserange.crc[2], curr_baserange.crc[3]);
-                    printf("LINE%d, print range_data[%d]\r\n", __LINE__, observation_num_idx-1);
+                    printf("LINE%d, print range_data[%d]\r\n", __LINE__, baserange_observation_num_idx-1);
                     uint8_t tmp_debug_data[44] = {'\0'};
                     memset(tmp_debug_data, '\0', 44);
-                    memcpy(tmp_debug_data, &curr_baserange.range_data[observation_num_idx-1], 44);
+                    memcpy(tmp_debug_data, &curr_baserange.range_data[baserange_observation_num_idx-1], 44);
                     for (int y = 0; y < 44; y++) {
                         printf("%02x ", tmp_debug_data[y]);
                     }
                     printf("\r\n");
-                    printf("LINE%d, observation_num_idx: %d, br_sub_item_size: %d\r\n", __LINE__, observation_num_idx, br_sub_item_size);
+                    printf("LINE%d, baserange_observation_num_idx: %d, baserange_sub_item_size: %d\r\n", __LINE__, baserange_observation_num_idx, baserange_sub_item_size);
                     local_left_size = 0;
                     local_left_obs_num = 0;
                     need_parse = false;
                     need_parse_left_size = 0;
-                    observation_num_idx = 0;
+                    baserange_observation_num_idx = 0;
                     is_get_whole_frame = true;
-                    br_sub_item_size = 0;
+                    baserange_sub_item_size = 0;
                     need_search_in_this_frame = false;
                 } else if (need_parse_left_size < ELEMENTSIZE) {
-                    printf("LINE%d, need_parse_left_size: %d, observation_num_idx: %d, br_sub_item_size: %d\r\n", __LINE__, need_parse_left_size, observation_num_idx, br_sub_item_size);
-                    memcpy(&combined_buf[br_sub_item_size], &buffer[0], (44 - br_sub_item_size));
-                    memcpy(&curr_baserange.range_data[observation_num_idx], &combined_buf[0], 44);
-                    printf("LINE%d, print range_data[%d]\r\n", __LINE__, observation_num_idx);
+                    printf("LINE%d, need_parse_left_size: %d, baserange_observation_num_idx: %d, baserange_sub_item_size: %d\r\n", __LINE__, need_parse_left_size, baserange_observation_num_idx, baserange_sub_item_size);
+                    memcpy(&combined_buf[baserange_sub_item_size], &buffer[0], (44 - baserange_sub_item_size));
+                    memcpy(&curr_baserange.range_data[baserange_observation_num_idx], &combined_buf[0], 44);
+                    printf("LINE%d, print range_data[%d]\r\n", __LINE__, baserange_observation_num_idx);
                     uint8_t tmp_debug_data[44] = {'\0'};
                     memset(tmp_debug_data, '\0', 44);
-                    memcpy(tmp_debug_data, &curr_baserange.range_data[observation_num_idx], 44);
+                    memcpy(tmp_debug_data, &curr_baserange.range_data[baserange_observation_num_idx], 44);
                     for (int y = 0; y < 44; y++) {
                         printf("%02x ", tmp_debug_data[y]);
                     }
                     printf("\r\n");
                     memset(combined_buf, '\0', 44);
-                    local_left_size = need_parse_left_size - (44 - br_sub_item_size);
+                    local_left_size = need_parse_left_size - (44 - baserange_sub_item_size);
                     local_left_obs_num = local_left_size / 44;
-                    memcpy((&curr_baserange.range_data[observation_num_idx+1]), &buffer[44-br_sub_item_size], 44 * local_left_obs_num);
+                    memcpy((&curr_baserange.range_data[baserange_observation_num_idx+1]), &buffer[44-baserange_sub_item_size], 44 * local_left_obs_num);
                     memcpy(&curr_baserange.crc, &buffer[need_parse_left_size-4], 4);
-                    printf("LINE%d, local_left_size: %d, local_left_obs_num: %d, br_sub_item_size: %d, observation_num_idx: %d\r\n", \
-                        __LINE__, local_left_size, local_left_obs_num, br_sub_item_size, observation_num_idx);
+                    printf("LINE%d, local_left_size: %d, local_left_obs_num: %d, baserange_sub_item_size: %d, baserange_observation_num_idx: %d\r\n", \
+                        __LINE__, local_left_size, local_left_obs_num, baserange_sub_item_size, baserange_observation_num_idx);
                     printf("LINE%d, Received crc0: %02x, crc1: %02x, crc2: %02x, crc3: %02x\r\n", \
                         __LINE__, curr_baserange.crc[0], curr_baserange.crc[1], curr_baserange.crc[2], curr_baserange.crc[3]);
 
@@ -284,8 +416,8 @@ int main(int argc, char *argv[])
                     local_left_obs_num = 0;
                     need_parse = false;
                     need_parse_left_size = 0;
-                    observation_num_idx = 0;
-                    br_sub_item_size = 0;
+                    baserange_observation_num_idx = 0;
+                    baserange_sub_item_size = 0;
                     is_get_whole_frame = true;
                     need_search_in_this_frame = true;
                     start_index = need_parse_left_size;
@@ -412,10 +544,10 @@ int main(int argc, char *argv[])
                             baserange_curr_size = 36 + (44 * curr_baserange.observation_num);
                             int curr_frame_valid_size = 1024;
                             int local_data_size = curr_frame_valid_size - (header_size - (4 - start_index)) - 4;
-                            observation_num_idx = local_data_size / 44;
-                            br_sub_item_size = local_data_size % 44;
-                            memcpy(&curr_baserange.range_data[0], &buffer[header_size+start_index], observation_num_idx * 44);
-                            memcpy(&combined_buf[0], &buffer[ELEMENTSIZE-br_sub_item_size], br_sub_item_size);
+                            baserange_observation_num_idx = local_data_size / 44;
+                            baserange_sub_item_size = local_data_size % 44;
+                            memcpy(&curr_baserange.range_data[0], &buffer[header_size+start_index], baserange_observation_num_idx * 44);
+                            memcpy(&combined_buf[0], &buffer[ELEMENTSIZE-baserange_sub_item_size], baserange_sub_item_size);
                             if (baserange_curr_size > curr_frame_valid_size) {
                                 is_get_whole_frame = false;
                                 need_parse = true;
@@ -430,6 +562,38 @@ int main(int argc, char *argv[])
                             }
                             printf("LINE%d, baserange_curr_size: %d, curr_frame_valid_size: %d, need_parse: %d, need_parse_left_size: %d\r\n", __LINE__, baserange_curr_size, curr_frame_valid_size, need_parse, need_parse_left_size);
                             printf("LINE%d, loop_cnt: %d, baserange_frame_cnt: %d, start_index: %d, br_obs_num: %d\r\n", __LINE__, loop_cnt, baserange_frame_cnt, start_index, curr_baserange.observation_num);
+                            break;
+                        }
+                        case MSG_ID_BESTSATS:
+                        {
+                            bestsats_frame_cnt++;
+                            if (-1 == start_index) {
+                                tmp_header[4] = m_last_frame_record.msg_id_lo_byte;
+                            }
+                            memcpy(&tmp_header[4-start_index], &buffer[0], header_size-(4-start_index));
+                            memcpy(&curr_bestsats.hdr_msg, &tmp_header[0], header_size);
+                            memcpy(&curr_bestsats.num_of_sats, &buffer[header_size-(4-start_index)], 4);
+                            bestsats_curr_size = 36 + (BESTSATS_ITEM_SIZE * curr_bestsats.num_of_sats);
+                            int curr_frame_valid_size = 1024;
+                            int local_data_size = curr_frame_valid_size - (header_size - (4 - start_index)) - 4;
+                            bestsats_obs_num_idx = local_data_size / BESTSATS_ITEM_SIZE;
+                            bestsats_sub_item_size = local_data_size % BESTSATS_ITEM_SIZE;
+                            memcpy(&curr_bestsats.sats_data[0], &buffer[header_size + start_index], bestsats_obs_num_idx* BESTSATS_ITEM_SIZE);
+                            memcpy(&combined_buf[0], &buffer[ELEMENTSIZE-bestsats_sub_item_size], bestsats_sub_item_size);
+                            if (bestsats_curr_size > curr_frame_valid_size) {
+                                is_get_whole_frame = false;
+                                need_parse = true;
+                                need_parse_left_size = bestsats_curr_size - curr_frame_valid_size - (4 - start_index);
+                                need_search_in_this_frame = false;        // Need parse in next frame, no need to search in this frame
+                            } else {
+                                is_get_whole_frame = true;
+                                need_parse = false;        // 当前帧已完成拷贝，无须解析下一帧
+                                need_parse_left_size = 0;
+                                need_search_in_this_frame = true;        // Need parse in next frame, no need to search in this frame
+                                start_index = curr_frame_valid_size - bestsats_curr_size;
+                            }
+                            printf("LINE%d, bestsats_curr_size: %d, curr_frame_valid_size: %d, need_parse: %d, need_parse_left_size: %d\r\n", __LINE__, bestsats_curr_size, curr_frame_valid_size, need_parse, need_parse_left_size);
+                            printf("LINE%d, loop_cnt: %d, bestsats_frame_cnt: %d, start_index: %d, bestsats_obs_num: %d\r\n", __LINE__, loop_cnt, bestsats_frame_cnt, start_index, curr_bestsats.num_of_sats);
                             break;
                         }
                         case MSG_ID_BESTPOS:
@@ -522,12 +686,12 @@ int main(int argc, char *argv[])
                                 baserange_curr_size = 36 + (44 * curr_baserange.observation_num);
                                 int curr_frame_valid_size = 1024 - j;
                                 int local_data_size = curr_frame_valid_size - header_size - 4;
-                                observation_num_idx = local_data_size / 44;
-                                br_sub_item_size = local_data_size % 44;
+                                baserange_observation_num_idx = local_data_size / 44;
+                                baserange_sub_item_size = local_data_size % 44;
 
                                 if (baserange_curr_size > curr_frame_valid_size) {
                                     memcpy(&curr_baserange.range_data[0], &buffer[j+header_size-start_index+4], curr_frame_valid_size - header_size - 4);
-                                    memcpy(&combined_buf[0], &buffer[ELEMENTSIZE-br_sub_item_size], br_sub_item_size);
+                                    memcpy(&combined_buf[0], &buffer[ELEMENTSIZE-baserange_sub_item_size], baserange_sub_item_size);
                                     is_get_whole_frame = false;
                                     need_parse = true;
                                     need_parse_left_size = baserange_curr_size - curr_frame_valid_size;
