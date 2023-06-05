@@ -150,18 +150,14 @@ uint8_t getSignalType(ChannelStatus* chnl_status) {
             {
                 ret = 1;
             }
-            if (SBAS_L5_DATA == sig_type)
-            {
-                ret = 2;
-            }
             break;
         }
         case SatSys_GAL: {
-            if (GAL_E1B == sig_type || GAL_E1C == sig_type || GAL_E5AQ == sig_type)
+            if (GAL_E1B == sig_type || GAL_E1C == sig_type)
             {
                 ret = 1;
             }
-            else if (GAL_E5AQ == sig_type || GAL_E5BQ == sig_type)
+            else if (GAL_E5BQ == sig_type)
             {
                 ret = 2;
             }
@@ -188,6 +184,170 @@ uint8_t getSignalType(ChannelStatus* chnl_status) {
     return ret;
 }
 
+
+void statisticNumberOfSatellitesPerSignal(UNCBESTSATSMsg *bestsats_data)
+{
+    uint32_t i;
+    uint32_t satellites_of_l1 = 0;
+    uint32_t satellites_of_l2 = 0;
+
+    for (i = 0; i < bestsats_data->num_of_sats; i++)
+    {
+        if (((bestsats_data->sats_data[i].sat_signal_mask >> 4) & 0x01) == 0x01)    // 检查共视卫星
+        {
+            if ((bestsats_data->sats_data[i].sat_signal_mask & 0x01) == 0x01)
+            {
+                satellites_of_l1++;
+            }
+            if (((bestsats_data->sats_data[i].sat_signal_mask >> 1) & 0x01) == 0x01)
+            {
+                satellites_of_l2++;
+            }
+        }
+    }
+
+    printf("%s(%d) satellites_of_l1: %d, satellites_of_l2: %d\r\n", __func__, __LINE__, satellites_of_l1, satellites_of_l2);
+}
+
+
+bool checkCarSatelliteInBestSatellite(UNCBESTSATSMsg* bestsats_data, uint32_t satellite_sys, uint32_t satellite_prn, uint32_t sig_type)
+{
+    uint32_t i;
+    bool ret = false;
+    for (i = 0; i < curr_bestsats.num_of_sats; i++)
+    {
+        uint32_t sat_prn = bestsats_data->sats_data[i].sat_prn;
+        uint16_t bestsats_prn = ((uint8_t*)(&sat_prn))[2] | (((uint8_t*)(&sat_prn))[3] << 8));
+        if ((satellite_sys == bestsats_data->sats_data[i].sat_sys) && (satellite_prn == bestsats_prn))
+        {
+
+            if (((bestsats_data->sats_data[i].sat_signal_mask >> 4) & 0x01) == 0x01)    // 检查共视卫星
+            {
+                if ((bestsats_data->sats_data[i].sat_signal_mask & 0x01) == 0x01)        // 检查是否匹配L1信号类型
+                {
+                    switch (satellite_sys)
+                    {
+                    case SatSys_GPS:
+                    {
+                        if (GPS_L1CA == sig_type)
+                        {
+                            ret = true;
+                        }
+                        break;
+                    }
+                    case SatSys_QZSS:
+                    {
+                        if (QZSS_L1C == sig_type)
+                        {
+                            ret = true;
+                        }
+                        break;
+                    }
+                    case SatSys_GLONASS:
+                    {
+                        if (GLO_L1C == sig_type)
+                        {
+                            ret = true;
+                        }
+                        break;
+                    }
+                    case SatSys_SBAS:
+                    {
+                        if (SBAS_L1CA == sig_type)
+                        {
+                            ret = true;
+                        }
+                        break;
+                    }
+                    case SatSys_GAL:
+                    {
+
+                        if (GAL_E1B == sig_type || GAL_E1C == sig_type || GAL_E5AQ == sig_type)
+                        {
+                            ret = true;
+                        }
+                        break;
+                    }
+
+                    case SatSys_BDS: {
+                        if (BDS_B1I == sig_type || BDS_B1Q == sig_type || BDS_B1CQ == sig_type || BDS_B1C_DATA == sig_type)
+                        {
+                            ret = 1;
+                        }
+                        break;
+                    }
+
+                    default:
+                    {
+                        break;
+                    }
+                    }
+                }
+
+                if (((bestsats_data->sats_data[i].sat_signal_mask >> 1) & 0x01) == 0x01)        // 检查是否匹配L2信号类型
+                {
+                    switch (satellite_sys)
+                    {
+                        case SatSys_GPS:
+                        {
+                            if (GPS_L2P_W == sig_type || GPS_L2C == sig_type || GPS_L2P == sig_type)
+                            {
+                                ret = true;
+                            }
+                            break;
+                        }
+                        case SatSys_QZSS:
+                        {
+                            if (QZSS_L2P == sig_type || QZSS_L2C == sig_type)
+                            {
+                                ret = true;
+                            }
+                            break;
+                        }
+                        case SatSys_GLONASS:
+                        {
+                            if (GLO_L2C == sig_type)
+                            {
+                                ret = true;
+                            }
+                            break;
+                        }
+                        case SatSys_SBAS:
+                        {
+                            break;
+                        }
+                        case SatSys_GAL:
+                        {
+                            break;
+                        }
+                        case SatSys_BDS:
+                        {
+                            if (BDS_B2Q == sig_type || BDS_B2AQ == sig_type || BDS_B2B == sig_type || BDS_B2I == sig_type || BDS_B2A_DATA == sig_type)
+                            {
+                                ret = true;
+                            }
+                            break;
+                        }
+                        default:
+                        {
+                            break;
+                        }
+                    }    // end-of 'switch'
+                }
+            }    // end-of “检查共视卫星”
+        }
+    }    // end-of 'for' loop
+
+    return ret;
+}
+
+void statisticsCarSatelliteCN0(CompressedRangeMesaurements *range_cmp_data)
+{
+    uint32_t i;
+    float top4_cn0[4] = { 0.0, 0.0, 0.0, 0.0 };    // 从小到大排序
+    float acc_cn0 = 0.0;
+    uint32_t acc_cn0_count = 0;
+}
 
 void statisticsBaseStationSatellitesCN0(RangeMeasurements *baserange_data)
 {
@@ -261,7 +421,7 @@ void statisticsBaseStationSatellitesCN0(RangeMeasurements *baserange_data)
         signal_quality = SIGNAL_QUALITY_BAD;
     }
 
-    printf("acc_cn0_count: %d, top4_mean: %f, acc_mean: %f, sig_qual: %d\r\n", acc_cn0_count, top4_mean, acc_mean, signal_quality);
+    printf("%s(%d)  acc_cn0_count: %d, top4_mean: %f, acc_mean: %f, sig_qual: %d\r\n", __func__, __LINE__, acc_cn0_count, top4_mean, acc_mean, signal_quality);
 }
 
 int main(int argc, char *argv[])

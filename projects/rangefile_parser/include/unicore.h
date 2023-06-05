@@ -18,11 +18,10 @@ extern "C" {
 #define RTK_LOGV(fmt, ...)   elog_v("RTK", "%s(%d)" fmt, __func__, __LINE__, ##__VA_ARGS__)
 
 #define SUPPORT_AGRIC    0
-#define MAX_RANGECMP_LENGTH    150
 
-#define MAX_BESTSATS_LEN      60
-#define MAX_RANGECMP_LEN      140
-#define MAX_BASERANGE_LEN     130
+#define MAX_BESTSATS_LEN      80
+#define MAX_RANGECMP_LEN      180
+#define MAX_BASERANGE_LEN     180
 
 #define FIX_LENGTH_BESTPOS_MATCHEDPOS    104
 
