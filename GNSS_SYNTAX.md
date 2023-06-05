@@ -14,12 +14,21 @@ GPS一周就是物理世界的一周，
 
 ## GPGGA
 
-@20220513，咨询北斗王工，
+@20220513，咨询北斗王静龙，
 
 只有GPGGA，没有GPGGB。
 
 ## GPZDA
 
-@20220513，咨询北斗王工，
+@20220513，咨询北斗王静龙，
 
 如果要UTC年月日，就需要用 GPZDA语句。
+
+## BASERANGE
+
+BASERANGE就是rtcm数据转换来的。
+
+### 场景1，车与基站Lora匹配，基站正常发送RTCM数据，上位机发指令桥接至rtk模块，采集5分钟数据
+
+![normal case](images/gnss_syntax/normal_case_antenna_on_rover.PNG "normal case")
+
