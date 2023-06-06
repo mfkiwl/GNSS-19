@@ -59,6 +59,9 @@ using namespace std;
 #define DEBUG_LINE_START    715
 #define DEBUG_LINE_END    722
 
+#define WEEK_BASE    2246
+#define SECONDS_IN_ONE_WEEK    604800
+
 uint8_t data_buf[BASERANGE_MAX_LEN] = {'\0'};
 BESTPOSData m_bestpos_data;
 RangeMeasurements curr_baserange;
@@ -206,9 +209,16 @@ void statisticNumberOfSatellitesPerSignal(UNCBESTSATSMsg *bestsats_data)
         }
     }
 
-    printf("%s(%d) satellites_of_l1: %d, satellites_of_l2: %d\r\n", __func__, __LINE__, satellites_of_l1, satellites_of_l2);
-}
+    int bestsats_wn = bestsats_data->hdr_msg.week;
+    int bestsats_wn_converted = bestsats_wn - WEEK_BASE;
+    if (bestsats_wn_converted < 0)
+    {
+        bestsats_wn_converted = 0;
+    }
+    float bestsats_time_in_sec = (bestsats_wn_converted * SECONDS_IN_ONE_WEEK) + bestsats_data->hdr_msg.ms;
 
+    printf("%s(%d) bestsats time: %f, satellites_of_l1: %d, satellites_of_l2: %d\r\n", __func__, __LINE__, bestsats_time_in_sec, satellites_of_l1, satellites_of_l2);
+}
 
 bool checkCarSatelliteInBestSatellite(UNCBESTSATSMsg* bestsats_data, uint32_t satellite_sys, uint32_t satellite_prn, uint32_t sig_type)
 {
@@ -347,6 +357,78 @@ void statisticsCarSatelliteCN0(CompressedRangeMesaurements *range_cmp_data)
     float top4_cn0[4] = { 0.0, 0.0, 0.0, 0.0 };    // 从小到大排序
     float acc_cn0 = 0.0;
     uint32_t acc_cn0_count = 0;
+    for (int i = 0; i < range_cmp_data->observation_num; i++)
+    {
+        if (!checkCarSatelliteInBestSatellite(&curr_bestsats, range_cmp_data->range_data[i].channel_status.satellite_sys, \
+            range_cmp_data->range_data[i].range_record.satellite_prn, range_cmp_data->range_data[i].channel_status.signal_type))
+        {
+            continue;
+        }
+
+        // 能够走到这里，说明这颗卫星是共视卫星，要么是L1频点，要么是L2频点
+        if ((float)(range_cmp_data->range_data[i].range_record.locktime) / 32.0f < 5)
+        {
+            continue;
+        }
+
+        // 选取信号最强的4颗卫星，并且求所有卫星信号总和
+        acc_cn0 += range_cmp_data->range_data[i].range_record.carrier_to_noise;
+        acc_cn0_count++;
+
+        int32_t m, n;
+        float tmp1, tmp2;
+        for (m = 3; m >= 0; m--)
+        {
+            if (range_cmp_data->range_data[i].range_record.carrier_to_noise >= top4_cn0[m])
+            {
+                tmp1 = top4_cn0[m];
+                top4_cn0[m] = range_cmp_data->range_data[i].range_record.carrier_to_noise;
+                for (n = m-1; n >= 0; n--)
+                {
+                    tmp2 = top4_cn0[n];
+                    top4_cn0[n] = tmp1;
+                    tmp1 = tmp2;
+                }
+                break;
+            }
+        }
+    }    // end-of 'for'
+
+    // 求平均
+    float top4_mean = 0.0f;
+    float acc_mean = 0.0f;
+    if (acc_cn0_count > 0)
+    {
+        top4_mean = ((top4_cn0[0] + top4_cn0[1] + top4_cn0[2] + top4_cn0[3]) / 4) + 20;
+        acc_mean = acc_cn0 / acc_cn0_count + 20;
+    }
+
+    signal_quality_e signal_quality;
+    if (top4_mean >= 45.5f && acc_mean >= 42.0f)
+    {
+        signal_quality = SIGNAL_QUALITY_GOOD;
+    }
+    else if (top4_mean >= 44.25f && acc_mean > 38.2f)
+    {
+        signal_quality = SIGNAL_QUALITY_NORMAL;
+    }
+    else if (top4_mean == 0 || acc_mean == 0)
+    {
+        signal_quality = SIGNAL_QUALITY_NONE;
+    }
+    else
+    {
+        signal_quality = SIGNAL_QUALITY_BAD;
+    }
+    int rangecmp_wn = range_cmp_data->cmp_range_header.week;
+    int rangecmp_wn_converted = rangecmp_wn - WEEK_BASE;
+    if (rangecmp_wn_converted < 0)
+    {
+        rangecmp_wn_converted = 0;
+    }
+    float rangecmp_time_in_sec = (rangecmp_wn_converted * SECONDS_IN_ONE_WEEK) + range_cmp_data->cmp_range_header.ms;
+
+    printf("%s(%d)  range_cmp time: %f, acc_cn0_count: %d, top4_mean: %f, acc_mean: %f, sig_qual: %d\r\n", __func__, __LINE__, rangecmp_time_in_sec, acc_cn0_count, top4_mean, acc_mean, signal_quality);
 }
 
 void statisticsBaseStationSatellitesCN0(RangeMeasurements *baserange_data)
@@ -421,7 +503,15 @@ void statisticsBaseStationSatellitesCN0(RangeMeasurements *baserange_data)
         signal_quality = SIGNAL_QUALITY_BAD;
     }
 
-    printf("%s(%d)  acc_cn0_count: %d, top4_mean: %f, acc_mean: %f, sig_qual: %d\r\n", __func__, __LINE__, acc_cn0_count, top4_mean, acc_mean, signal_quality);
+    int baserange_wn = baserange_data->range_header.week;
+    int baserange_wn_converted = baserange_wn - WEEK_BASE;
+    if (baserange_wn_converted < 0)
+    {
+        baserange_wn_converted = 0;
+    }
+    float baserange_time_in_sec = (baserange_wn_converted * SECONDS_IN_ONE_WEEK) + baserange_data->range_header.ms;
+
+    printf("%s(%d)  baserange_cmp time: %f, acc_cn0_count: %d, top4_mean: %f, acc_mean: %f, sig_qual: %d\r\n", __func__, __LINE__, baserange_time_in_sec, acc_cn0_count, top4_mean, acc_mean, signal_quality);
 }
 
 int main(int argc, char *argv[])
