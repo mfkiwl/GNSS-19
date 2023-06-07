@@ -19,9 +19,13 @@ extern "C" {
 
 #define SUPPORT_AGRIC    0
 
+#define MAX_BASERANGE_LEN    180
+#define ELEMENT_SIZE_BASERANGE    44
+#define BASERANGE_MAX_LEN  36 + (44 * MAX_BASERANGE_LEN)    // 7956 Bytes
+#define MAX_DATA_BUF_LEN    BASERANGE_MAX_LEN
+
 #define MAX_BESTSATS_LEN      80
 #define MAX_RANGECMP_LEN      180
-#define MAX_BASERANGE_LEN     180
 
 #define FIX_LENGTH_BESTPOS_MATCHEDPOS    104
 
@@ -323,7 +327,7 @@ typedef struct {
 typedef struct {
     GenericHeaderForBinaryMsg header_msg;
     uint32_t total_obs_num;
-    UnicoreOneRangecmpMsg items[MAX_RANGECMP_LENGTH];
+    UnicoreOneRangecmpMsg items[MAX_RANGECMP_LEN];
     uint32_t crc;
 } UnicoreRangecmpMsg;    // RangecmpMsg may occupies, 28 + 4 + (24 * 130) + 4 = 3156
 

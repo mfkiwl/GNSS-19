@@ -54,7 +54,6 @@ using namespace std;
 #define ELEMENTCOUNT 1
 #define ELEMENTSIZE (DATASIZE/ELEMENTCOUNT)
 
-#define BASERANGE_MAX_LEN  5756
 
 #define DEBUG_LINE_START    715
 #define DEBUG_LINE_END    722
@@ -62,51 +61,82 @@ using namespace std;
 #define WEEK_BASE    2246
 #define SECONDS_IN_ONE_WEEK    604800
 
-uint8_t data_buf[BASERANGE_MAX_LEN] = {'\0'};
-BESTPOSData m_bestpos_data;
+uint8_t data_buf_for_crc[MAX_DATA_BUF_LEN] = {'\0'};
+/* BEGIN baserange */
 RangeMeasurements curr_baserange;
+/* BEGIN bestsats */
 UNCBESTSATSMsg curr_bestsats;
+/* BEGIN rangecmp */
+CompressedRangeMesaurements curr_rangecmp;
+/* BEGIN bestpos */
+BESTPOSData m_bestpos_data;
 
 typedef enum {
-    PARSING_INIT = 0,
-    FIND_HEADER = 1,
-    FOUND_HEADER = 2,
-    NEED_PARSE_BESTPOS_BODY = 3,
-    NEED_PARSE_BASERANGE_BODY = 4,
-    NEED_PARSE_BESTSATS_BODY = 5,
-    NEED_PARSE_RANGECMP_BODY = 6,
-    PARSE_BESTPOS_DONE = 7,
-    PARSE_BASERANGE_DONE = 8,
-    PARSE_BESTSATS_DONE = 9,
-    PARSE_RANGECMP_DONE = 10,
-    PARSE_STATE_NUM = 11,
-} PARSING_STATE;
-
-typedef struct {
-    PARSING_STATE parsing_state;
-    uint32_t total_frame_len;        // total_frame_len = had_parsed_len + need_parse_len
-    uint32_t had_parsed_len;
-    uint32_t need_parse_len;
-};
-
-
-typedef enum {
-    LAST_BYTES_0,
-    LAST_BYTES_1,
-    LAST_BYTES_2,
-    LAST_BYTES_3,
-    LAST_BYTES_4,
-    LAST_BYTES_5,
-    LAST_BYTES_BIG,
+    LAST_BYTES_0 = 0,
+    LAST_BYTES_1 = 1,
+    LAST_BYTES_2 = 2,
+    LAST_BYTES_3 = 3,
+    LAST_BYTES_4 = 4,
+    LAST_BYTES_5 = 5,
+    LAST_BYTES_BIG = 6,        // 说明上一个ELEMENT（1024字节）至少还有6个字节还没解析。
 } LAST_BYTES_NUM;
 
 typedef struct {
     int last_loop_cnt;
     LAST_BYTES_NUM last_bytes_num;
+    uint16_t big_len;
     uint8_t msg_id_lo_byte;
 } LAST_FRAME_RECORD;
 
-LAST_FRAME_RECORD m_last_frame_record;
+typedef enum {
+    PARSING_INIT = 0,
+    FIND_HEADERSYNC_FROM_LAST_ELEMENT = 1,
+    FIND_HEADERSYNC_FROM_CURR_ELEMENT = 2,
+    FOUND_HEADERSYNC = 3,
+    FOUND_MSG_ID = 4,                // 找到帧头的标准是检测到了 "0xAA 0x44 0x12 0x1C"
+    FIND_HEADER = 5,
+    FOUND_HEADER = 6,
+    FIND_ITEM_NUM = 7,
+    FOUND_ITEM_NUM = 8,
+    NEED_PARSE_BESTPOS_BODY = 9,
+    NEED_PARSE_BASERANGE_BODY = 10,
+    NEED_PARSE_BESTSATS_BODY = 11,
+    NEED_PARSE_RANGECMP_BODY = 12,
+    PARSE_BESTPOS_DONE = 13,
+    PARSE_BASERANGE_DONE = 14,        // 表明拿到了baserange这一帧的全部数据，但是还没做CRC校验。
+    PARSE_BESTSATS_DONE = 15,
+    PARSE_RANGECMP_DONE = 16,
+    PARSE_STATE_NUM = 17,
+} PARSING_STATE;
+
+typedef struct {
+    PARSING_STATE parsing_state;
+    uint16_t msg_id;
+    uint32_t total_frame_len;        // total_frame_len = had_parsed_len + need_parse_len
+    uint32_t had_parsed_len;
+    uint32_t need_parse_len;
+    uint32_t had_parsed_item_num;
+    uint32_t left_size_in_last_element;        // 上一个ELEMENT数据（1024字节）的尾巴
+    uint16_t left_size_in_curr_element;        // 这一个ELEMENT数据（1024字节）减去“与上一个ELEMENT尾巴拼凑的一个item”后剩余的大小
+    uint16_t left_item_num_in_curr_element;    // left_size_in_curr_element包含多少个item
+    LAST_FRAME_RECORD last_frame_info;
+    bool need_rd_new_data;
+} PARSING_INFO;
+
+PARSING_INFO m_parsing_info;
+
+typedef struct {
+    uint32_t baserange_found_frame_cnt = 0;
+    uint32_t baserange_verified_frame_cnt = 0;
+    uint32_t bestpos_found_frame_cnt = 0;
+    uint32_t bestpos_verified_frame_cnt = 0;
+    uint32_t rangecmp_found_frame_cnt = 0;
+    uint32_t rangecmp_verified_frame_cnt = 0;
+    uint32_t bestsats_found_frame_cnt = 0;
+    uint32_t bestsats_verified_frame_cnt = 0;
+} RTK_STATISTICS_INFO;
+
+RTK_STATISTICS_INFO m_rtk_statistics_info;
 
 uint8_t getSignalType(ChannelStatus* chnl_status) {
     uint8_t ret = 0xff;
@@ -227,7 +257,7 @@ bool checkCarSatelliteInBestSatellite(UNCBESTSATSMsg* bestsats_data, uint32_t sa
     for (i = 0; i < curr_bestsats.num_of_sats; i++)
     {
         uint32_t sat_prn = bestsats_data->sats_data[i].sat_prn;
-        uint16_t bestsats_prn = ((uint8_t*)(&sat_prn))[2] | (((uint8_t*)(&sat_prn))[3] << 8));
+        uint16_t bestsats_prn = ((uint8_t*)(&sat_prn))[2] | (((uint8_t*)(&sat_prn))[3] << 8);
         if ((satellite_sys == bestsats_data->sats_data[i].sat_sys) && (satellite_prn == bestsats_prn))
         {
 
@@ -514,6 +544,61 @@ void statisticsBaseStationSatellitesCN0(RangeMeasurements *baserange_data)
     printf("%s(%d)  baserange_cmp time: %f, acc_cn0_count: %d, top4_mean: %f, acc_mean: %f, sig_qual: %d\r\n", __func__, __LINE__, baserange_time_in_sec, acc_cn0_count, top4_mean, acc_mean, signal_quality);
 }
 
+void init_parsing_info(void)
+{
+    m_parsing_info.parsing_state = PARSING_INIT;
+    m_parsing_info.msg_id = 0;
+    m_parsing_info.total_frame_len = 0;
+    m_parsing_info.had_parsed_len = 0;
+    m_parsing_info.need_parse_len = 0;
+    m_parsing_info.had_parsed_item_num = 0;
+    m_parsing_info.left_size_in_last_element = 0;
+    m_parsing_info.left_size_in_curr_element = 0;
+    m_parsing_info.left_item_num_in_curr_element = 0;
+    m_parsing_info.last_frame_info.last_loop_cnt = -1;
+    m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_0;
+    m_parsing_info.last_frame_info.msg_id_lo_byte = 0xFF;
+    m_parsing_info.last_frame_info.big_len = 0;
+    m_parsing_info.need_rd_new_data = false;
+}
+
+void init_statistics_info(void)
+{
+	m_rtk_statistics_info.baserange_found_frame_cnt = 0;
+    m_rtk_statistics_info.baserange_verified_frame_cnt = 0;
+	m_rtk_statistics_info.bestpos_found_frame_cnt = 0;
+	m_rtk_statistics_info.bestpos_verified_frame_cnt = 0;
+	m_rtk_statistics_info.bestsats_found_frame_cnt = 0;
+	m_rtk_statistics_info.bestsats_verified_frame_cnt = 0;
+	m_rtk_statistics_info.rangecmp_found_frame_cnt = 0;
+	m_rtk_statistics_info.rangecmp_verified_frame_cnt = 0;
+}
+
+void init_other_stuff(void)
+{
+    memset(data_buf_for_crc, '\0', MAX_DATA_BUF_LEN);
+}
+
+void check_parsing_info(uint32_t line_number)
+{
+    printf("Line%d, parsing_state: %d, total_frame_len: %d, had_parsed_len: %d, need_parse_len: %d, \
+        had_parsed_item_num: %d, left_size_in_last_element: %d, left_size_in_curr_element: %d, \
+        left_item_num_in_curr_element: %d, last_loop_cnt: %d, last_byte_num: %d, last_bytes_big_len: %d\r\n", \
+        line_number, \
+        m_parsing_info.parsing_state, \
+        m_parsing_info.total_frame_len, \
+        m_parsing_info.had_parsed_len, \
+        m_parsing_info.need_parse_len, \
+        m_parsing_info.had_parsed_item_num, \
+        m_parsing_info.left_size_in_last_element, \
+        m_parsing_info.left_size_in_curr_element, \
+        m_parsing_info.left_item_num_in_curr_element, \
+        m_parsing_info.last_frame_info.last_loop_cnt, \
+        m_parsing_info.last_frame_info.last_bytes_num, \
+        m_parsing_info.last_frame_info.big_len
+    );
+}
+
 int main(int argc, char *argv[])
 {
     if (argc >= 2) {
@@ -527,17 +612,13 @@ int main(int argc, char *argv[])
             return -1;
         }
 
-        memset(data_buf, '\0', BASERANGE_MAX_LEN);
 
-         fseek(p_file, 0, SEEK_END);
-         int file_length = ftell(p_file);
-         int total_DATASIZE_cnt = file_length / ELEMENTSIZE;
+        fseek(p_file, 0, SEEK_END);
+        int file_length = ftell(p_file);
+        int total_DATASIZE_cnt = file_length / ELEMENTSIZE;
 
-         printf("file_length: %d, total_DATASIZE_cnt: %d\r\n", file_length, total_DATASIZE_cnt);
+        printf("file_length: %d, total_DATASIZE_cnt: %d\r\n", file_length, total_DATASIZE_cnt);
 
-
-         m_last_frame_record.last_loop_cnt = -1;
-         m_last_frame_record.last_bytes_num = LAST_BYTES_0;
 
         uint8_t buffer[RX_BUF_SIZE] = {'0'};
         fseek(p_file, 0, SEEK_SET);
@@ -545,6 +626,7 @@ int main(int argc, char *argv[])
         int baserange_frame_cnt = 0;
         int baserange_verified_frame_cnt = 0;
         int bestpos_frame_cnt = 0;
+        int bestpos_verified_frame_cnt = 0;
         int rangecmp_frame_cnt = 0;
         int rangecmp_verified_frame_cnt = 0;
         int bestsats_frame_cnt = 0;
@@ -571,8 +653,12 @@ int main(int argc, char *argv[])
         int start_index = 0;
         printf("size_of_buffer: %d\r\n", (int)sizeof(buffer));
         bool is_get_whole_frame = false;
-        uint8_t combined_buf[44] = {'\0'};
-        memset(combined_buf, '\0', 44);
+        uint8_t combined_baserange_buf[ELEMENT_SIZE_BASERANGE] = {'\0'};
+        memset(combined_baserange_buf, '\0', ELEMENT_SIZE_BASERANGE);
+
+        init_parsing_info();
+        init_statistics_info();
+        init_other_stuff();
         while (!feof(p_file)) // to read file
         {
             printf("Last:    ");
@@ -581,17 +667,481 @@ int main(int argc, char *argv[])
             }
             printf("\r\n");
             // function used to read the contents of file
-            size_t items_read_cnt = fread_s(buffer, BUFFERSIZE, ELEMENTSIZE, ELEMENTCOUNT, p_file);
-            printf("items_read_cnt: %d\r\n", (int)items_read_cnt);
-            printf("Current:    ");
-            for (int k = 0; k < RX_BUF_SIZE; k++) {
-                printf("%02x ", buffer[k]);
+            // 是否读新的数据取决于上一个ELEMENT数据是否已经处理完了
+            if (m_parsing_info.need_rd_new_data) {
+                size_t items_read_cnt = fread_s(buffer, BUFFERSIZE, ELEMENTSIZE, ELEMENTCOUNT, p_file);
+                printf("items_read_cnt: %d\r\n", (int)items_read_cnt);
+                printf("Current:    ");
+                for (int k = 0; k < RX_BUF_SIZE; k++) {
+                    printf("%02x ", buffer[k]);
+                }
+                printf("\r\n");
             }
-            printf("\r\n");
 
             if (loop_cnt >= DEBUG_LINE_START and loop_cnt <= DEBUG_LINE_END) {
                 printf("LINE%d, loop_cnt: %d, need_parse: %d\r\n", __LINE__, loop_cnt, need_parse);
             }
+
+            switch (m_parsing_info.parsing_state)
+            {
+                case PARSING_INIT:
+                {
+                    break;
+                }
+                case FIND_HEADERSYNC_FROM_LAST_ELEMENT:
+                {
+                    switch (m_parsing_info.last_frame_info.last_bytes_num)
+                    {
+                        case LAST_BYTES_1:
+                        {
+                            if (GEN_SYNC1 == buffer[0]) {
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_1;
+                            }
+                            else {
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_0;
+                            }
+                            m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_CURR_ELEMENT;
+                            break;
+                        }
+                        case LAST_BYTES_2:
+                        {
+                            if (GEN_SYNC1 == buffer[0] && GEN_SYNC2 == buffer[1]) {
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_2;
+                            }
+                            else if (GEN_SYNC1 == buffer[1]) {
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_1;
+                            }
+                            else {
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_0;
+                            }
+                            m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_CURR_ELEMENT;
+                            break;
+                        }
+                        case LAST_BYTES_3:
+                        {
+                            if (GEN_SYNC1 == buffer[0] && GEN_SYNC2 == buffer[1] && GEN_SYNC3 == buffer[2]) {
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_3;
+                            }
+                            else if (GEN_SYNC1 == buffer[1] && GEN_SYNC2 == buffer[2]) {
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_2;
+                            }
+                            else if (GEN_SYNC1 == buffer[2]) {
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_1;
+                            }
+                            else {
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_0;
+                            }
+                            m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_CURR_ELEMENT;
+                            break;
+                        }
+                        case LAST_BYTES_4:
+                        {
+                            if (GEN_SYNC1 == buffer[0] && GEN_SYNC2 == buffer[1] && GEN_SYNC3 == buffer[2] && GEN_HEAD_LEN == buffer[3]) {
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_4;
+                                m_parsing_info.parsing_state = FOUND_HEADERSYNC;
+                            }
+                            else if (GEN_SYNC1 == buffer[1] && GEN_SYNC2 == buffer[2] && GEN_SYNC3 == buffer[3]) {
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_3;
+                                m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_CURR_ELEMENT;
+                            }
+                            else if (GEN_SYNC1 == buffer[2] && GEN_SYNC2 == buffer[3]) {
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_2;
+                                m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_CURR_ELEMENT;
+                            }
+                            else if (GEN_SYNC1 == buffer[3]) {
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_1;
+                                m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_CURR_ELEMENT;
+                            }
+                            else {
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_0;
+                                m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_CURR_ELEMENT;
+                            }
+                            break;
+                        }
+                        case LAST_BYTES_5:
+                        {
+                            if (GEN_SYNC1 == buffer[0] && GEN_SYNC2 == buffer[1] && GEN_SYNC3 == buffer[2] && GEN_HEAD_LEN == buffer[3]) {
+                                m_parsing_info.last_frame_info.msg_id_lo_byte = buffer[4];
+                                m_parsing_info.parsing_state = FOUND_HEADERSYNC;
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_5;
+                            }
+                            else if (GEN_SYNC1 == buffer[1] && GEN_SYNC2 == buffer[2] && GEN_SYNC3 == buffer[3] && GEN_HEAD_LEN == buffer[4]) {
+                                m_parsing_info.parsing_state = FOUND_HEADERSYNC;
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_4;
+                            }
+                            else if (GEN_SYNC1 == buffer[2] && GEN_SYNC2 == buffer[3] && GEN_SYNC3 == buffer[4]) {
+                                m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_CURR_ELEMENT;
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_3;
+                            }
+                            else if (GEN_SYNC1 == buffer[3] && GEN_SYNC2 == buffer[4]) {
+                                m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_CURR_ELEMENT;
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_2;
+                            }
+                            else if (GEN_SYNC1 == buffer[4]) {
+                                m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_CURR_ELEMENT;
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_1;
+                            }
+                            else {
+                                m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_CURR_ELEMENT;
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_0;
+                            }
+                            break;
+                        }
+                        case LAST_BYTES_BIG:
+                        {
+                            /* 要找到帧头的第一件事就是找到0xAA这个字节 */
+                            for (int i = 0; i < m_parsing_info.last_frame_info.big_len; i++) {
+                                if (GEN_SYNC1 == buffer[i] && FIND_HEADERSYNC_FROM_LAST_ELEMENT == m_parsing_info.parsing_state) {
+                                    if (i == m_parsing_info.last_frame_info.big_len-1)
+                                    {
+                                        m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_CURR_ELEMENT;
+                                        m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_1;
+                                        break;
+                                    }
+                                    else if (i == m_parsing_info.last_frame_info.big_len - 2)
+                                    {
+                                        if (GEN_SYNC2 == buffer[i+1]) {
+                                            m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_CURR_ELEMENT;
+                                            m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_2;
+                                            break;
+                                        }
+                                        else {
+                                            m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_LAST_ELEMENT;
+                                        }
+                                    }
+                                    else if (i == m_parsing_info.last_frame_info.big_len - 3) {
+                                        if (GEN_SYNC2 == buffer[i+1] && GEN_SYNC3 == buffer[i+2]) {
+                                            m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_CURR_ELEMENT;
+                                            m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_3;
+                                            break;
+                                        }
+                                        else {
+                                            m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_LAST_ELEMENT;
+                                        }
+                                    }
+                                    else if (i == m_parsing_info.last_frame_info.big_len - 4) {
+                                        if (GEN_SYNC2 == buffer[i+1] && GEN_SYNC3 == buffer[i+2] && GEN_HEAD_LEN == buffer[i+3]) {
+                                            m_parsing_info.parsing_state = FOUND_HEADERSYNC;
+                                            m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_4;
+                                            break;
+                                        }
+                                        else {
+                                            m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_LAST_ELEMENT;
+                                        }
+                                    }
+                                    else if (i == m_parsing_info.last_frame_info.big_len - 5) {
+                                        if (GEN_SYNC2 == buffer[i+1] && GEN_SYNC3 == buffer[i+2] && GEN_HEAD_LEN == buffer[i+3]) {
+                                            m_parsing_info.parsing_state = FOUND_HEADERSYNC;
+                                            m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_5;
+                                            m_parsing_info.last_frame_info.msg_id_lo_byte = buffer[i+4];
+                                            break;
+                                        }
+                                        else {
+                                            m_parsing_info.parsing_state = FIND_HEADERSYNC_FROM_LAST_ELEMENT;
+                                        }
+                                    }
+                                    else if (i <= m_parsing_info.last_frame_info.big_len - 5) {
+                                        if (GEN_SYNC2 == buffer[i+1] && GEN_SYNC3 == buffer[i+2] && GEN_HEAD_LEN == buffer[i+3]) {
+                                            m_parsing_info.parsing_state = FOUND_MSG_ID;
+                                            m_parsing_info.msg_id = (uint16_t)(((uint16_t)buffer[i+5]) << 8) + buffer[i+4];
+                                            m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_BIG;
+                                            m_parsing_info.last_frame_info.big_len = m_parsing_info.last_frame_info.big_len - i;
+                                            memcpy(&buffer[0], &buffer[i], m_parsing_info.last_frame_info.big_len);
+                                            m_parsing_info.need_rd_new_data = false;
+                                            break;
+                                        }
+                                    
+                                    }
+
+                                }
+                            }
+                            break;
+                        }
+                        default:
+                        {
+                            break;
+                        }
+                    }
+                    break;
+                }
+                case FIND_HEADERSYNC_FROM_CURR_ELEMENT:
+                {
+                    break;
+                }
+                case FOUND_HEADERSYNC:        /* FOUND_HEADER只有2种情况，LAST_BYTES_4，LAST_BYTES_5 */
+                {
+                    switch (m_parsing_info.last_frame_info.last_bytes_num)
+                    {
+                        case LAST_BYTES_4:
+                        {
+                            break;
+                        }
+                        case LAST_BYTES_5:
+                        {
+                            break;
+                        }
+                        default:
+                        {
+                            break;
+                        }
+                    }
+                    break;
+                }
+                case FOUND_MSG_ID:        /* FOUND_MSG_ID */
+                {
+                    switch (m_parsing_info.msg_id)
+                    {
+                        case MSG_ID_BASERANGE:
+                        {
+                            m_rtk_statistics_info.baserange_found_frame_cnt++;
+                            if (m_parsing_info.last_frame_info.big_len >= (header_size + 4)) {
+                                memcpy(&curr_baserange.range_header, &buffer[0], header_size);
+                                memcpy(&curr_baserange.observation_num, &buffer[header_size], 4);
+                                m_parsing_info.parsing_state = NEED_PARSE_BASERANGE_BODY;
+                                m_parsing_info.total_frame_len = 36 + (ELEMENT_SIZE_BASERANGE * curr_baserange.observation_num);
+                                m_parsing_info.left_size_in_last_element = m_parsing_info.last_frame_info.big_len - header_size - 4;
+                                m_parsing_info.left_item_num_in_curr_element = m_parsing_info.left_size_in_last_element / ELEMENT_SIZE_BASERANGE;
+                                m_parsing_info.left_size_in_curr_element = m_parsing_info.left_size_in_last_element % ELEMENT_SIZE_BASERANGE;
+                                if (m_parsing_info.left_item_num_in_curr_element > 0) {
+                                    memcpy(&curr_baserange.range_data[0], &buffer[header_size + 4], ELEMENT_SIZE_BASERANGE * m_parsing_info.left_item_num_in_curr_element);
+                                }
+                                if (m_parsing_info.left_size_in_curr_element > 0) {
+                                    memcpy(&combined_baserange_buf[0], &buffer[header_size + 4 + (ELEMENT_SIZE_BASERANGE * m_parsing_info.left_item_num_in_curr_element)], \
+                                        m_parsing_info.left_size_in_curr_element);
+                                }
+                            }
+                            else if (m_parsing_info.last_frame_info.big_len >= header_size) {
+                                memcpy(&curr_baserange.range_header, &buffer[0], header_size);
+                                m_parsing_info.parsing_state = FIND_ITEM_NUM;
+                                m_parsing_info.left_size_in_last_element = m_parsing_info.last_frame_info.big_len - header_size;
+                                if (m_parsing_info.left_size_in_last_element > 0) {
+                                    memcpy(&buffer[0], &buffer[header_size], m_parsing_info.left_size_in_last_element);
+                                }
+                            }
+                            else {
+                                m_parsing_info.parsing_state = FIND_HEADER;
+                            
+                            }
+                            m_parsing_info.had_parsed_len += m_parsing_info.last_frame_info.big_len;
+                            break;
+                        }
+                        case MSG_ID_RANGECMP:
+                        {
+                            m_rtk_statistics_info.rangecmp_found_frame_cnt++;
+                            break;
+                        }
+                        case MSG_ID_BESTSATS:
+                        {
+                            m_rtk_statistics_info.bestsats_found_frame_cnt++;
+                            break;
+                        }
+                        case MSG_ID_BESTPOS:
+                        {
+                            m_rtk_statistics_info.bestpos_found_frame_cnt++;
+                            break;
+                        }
+                        default:
+                        {
+                            break;
+                        }
+                    }
+                    break;
+                }
+                case FIND_HEADER:
+                {
+                    break;
+                }
+                case FOUND_HEADER:
+                {
+                    break;
+                }
+                case FIND_ITEM_NUM:
+                {
+                    break;
+                }
+                case FOUND_ITEM_NUM:
+                {
+                    break;
+                }
+                case NEED_PARSE_BESTPOS_BODY:
+                {
+                    break;
+                }
+                case NEED_PARSE_BASERANGE_BODY:
+                {
+                    check_parsing_info(__LINE__);
+                    if (m_parsing_info.need_parse_len > ELEMENTSIZE)
+                    {
+                        memcpy(&combined_baserange_buf[m_parsing_info.left_size_in_last_element], &buffer[0], (ELEMENT_SIZE_BASERANGE - m_parsing_info.left_size_in_last_element));
+                        memcpy(&curr_baserange.range_data[m_parsing_info.had_parsed_item_num], &combined_baserange_buf[0], ELEMENT_SIZE_BASERANGE);
+                        m_parsing_info.had_parsed_item_num++;
+                        memset(combined_baserange_buf, '\0', ELEMENT_SIZE_BASERANGE);
+                        m_parsing_info.left_size_in_curr_element = ELEMENTSIZE - (ELEMENT_SIZE_BASERANGE - m_parsing_info.left_size_in_last_element);
+                        m_parsing_info.left_item_num_in_curr_element = (uint16_t)(m_parsing_info.left_size_in_curr_element / ELEMENT_SIZE_BASERANGE);
+                        memcpy(&curr_baserange.range_data[m_parsing_info.had_parsed_item_num], &buffer[ELEMENT_SIZE_BASERANGE - m_parsing_info.left_size_in_last_element], \
+                            ELEMENT_SIZE_BASERANGE* m_parsing_info.left_item_num_in_curr_element);
+                        m_parsing_info.left_size_in_last_element = (uint16_t)(m_parsing_info.left_size_in_curr_element % ELEMENT_SIZE_BASERANGE);
+                        if (m_parsing_info.left_size_in_last_element > 0) {
+                            memcpy(&combined_baserange_buf[0], &buffer[ELEMENTSIZE - m_parsing_info.left_size_in_last_element], m_parsing_info.left_size_in_last_element);
+                        }
+                        m_parsing_info.parsing_state = NEED_PARSE_BASERANGE_BODY;
+                        m_parsing_info.had_parsed_len += ELEMENTSIZE;
+                        m_parsing_info.had_parsed_item_num += m_parsing_info.left_item_num_in_curr_element;
+                        m_parsing_info.need_parse_len -= ELEMENTSIZE;
+                        m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_0;
+                    }
+                    else if (m_parsing_info.need_parse_len <= ELEMENTSIZE) {
+                        memcpy(&combined_baserange_buf[m_parsing_info.left_size_in_last_element], &buffer[0], (ELEMENT_SIZE_BASERANGE - m_parsing_info.left_size_in_last_element));
+                        memcpy(&curr_baserange.range_data[m_parsing_info.had_parsed_item_num], &combined_baserange_buf[0], ELEMENT_SIZE_BASERANGE);
+                        m_parsing_info.had_parsed_item_num++;
+                        memset(combined_baserange_buf, '\0', ELEMENT_SIZE_BASERANGE);
+                        m_parsing_info.left_size_in_curr_element = m_parsing_info.need_parse_len - (ELEMENT_SIZE_BASERANGE - m_parsing_info.left_size_in_last_element);
+                        m_parsing_info.left_item_num_in_curr_element = (uint16_t)(m_parsing_info.left_size_in_curr_element / ELEMENT_SIZE_BASERANGE);
+                        memcpy(&curr_baserange.range_data[m_parsing_info.had_parsed_item_num], &buffer[ELEMENT_SIZE_BASERANGE - m_parsing_info.left_size_in_last_element], \
+                            ELEMENT_SIZE_BASERANGE* m_parsing_info.left_item_num_in_curr_element);
+                        // m_parsing_info.left_size_in_last_element应该为0才对。
+                        m_parsing_info.left_size_in_last_element = (uint16_t)(m_parsing_info.left_size_in_curr_element % ELEMENT_SIZE_BASERANGE);
+                        if (m_parsing_info.left_size_in_last_element > 0) {
+                            printf("Line%d, Something must be wrong, left_size_in_last_element is desired to be 0, while has value: %d\r\n", \
+                                __LINE__, m_parsing_info.left_size_in_last_element);
+                        }
+                        memcpy(&curr_baserange.crc, &buffer[m_parsing_info.need_parse_len - 4], 4);
+                        m_parsing_info.parsing_state = PARSE_BASERANGE_DONE;
+                        m_parsing_info.had_parsed_len += m_parsing_info.need_parse_len;
+                        m_parsing_info.had_parsed_item_num += m_parsing_info.left_item_num_in_curr_element;
+                        check_parsing_info(__LINE__);
+                        m_parsing_info.need_parse_len = 0;
+                        m_parsing_info.left_size_in_last_element = 0;
+                        m_parsing_info.left_size_in_curr_element = 0;
+                        m_parsing_info.left_item_num_in_curr_element = 0;
+                        m_parsing_info.last_frame_info.last_loop_cnt = loop_cnt;
+                        if (m_parsing_info.need_parse_len == ELEMENTSIZE) {
+                            m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_0;
+                            m_parsing_info.last_frame_info.big_len = 0;
+                        }
+                        else {
+                            memcpy(&buffer[0], &buffer[m_parsing_info.need_parse_len], (ELEMENTSIZE - m_parsing_info.need_parse_len));
+                            uint16_t unparsed_len = ELEMENTSIZE - m_parsing_info.need_parse_len;
+                            if (unparsed_len > 5) {
+                                m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_BIG;
+                            }
+                            else {
+                                switch (unparsed_len) {
+                                    case 1:
+                                    {
+                                        m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_1;
+                                        break;
+                                    }
+                                    case 2:
+                                    {
+                                        m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_2;
+                                        break;
+                                    }
+                                    case 3:
+                                    {
+                                        m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_3;
+                                        break;
+                                    }
+                                    case 4:
+                                    {
+                                        m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_4;
+                                        break;
+                                    }
+                                    case 5:
+                                    {
+                                        m_parsing_info.last_frame_info.last_bytes_num = LAST_BYTES_5;
+                                        break;
+                                    }
+                                    default:
+                                    {
+                                        break;
+                                    }
+                                }
+                            
+                            }
+                            m_parsing_info.last_frame_info.big_len = ELEMENTSIZE - m_parsing_info.need_parse_len;
+                        }
+                    }
+                    check_parsing_info(__LINE__);
+                    break;
+                }
+                case NEED_PARSE_BESTSATS_BODY:
+                {
+                    break;
+                }
+                case NEED_PARSE_RANGECMP_BODY:
+                {
+                    break;
+                }
+                case PARSE_BESTPOS_DONE:
+                {
+                    break;
+                }
+                case PARSE_BASERANGE_DONE:
+                {
+                    memcpy(&data_buf_for_crc[0], &curr_baserange.range_header, header_size);
+                    memcpy(&data_buf_for_crc[header_size], &curr_baserange.observation_num, 4);
+                    int real_data_size = m_parsing_info.total_frame_len - header_size - 4 - 4;
+                    memcpy(&data_buf_for_crc[header_size+4], &curr_baserange.range_data[0], real_data_size);
+                    memcpy(&data_buf_for_crc[header_size+4+real_data_size], &curr_baserange.crc[0], 4);
+                    uint32_t base_received_crc = curr_baserange.crc[0] + \
+                        (curr_baserange.crc[1] << 8) + \
+                        (curr_baserange.crc[2] << 16) + \
+                        (curr_baserange.crc[3] << 24);
+                    bool check_crc_ret = checkCRC32(&data_buf_for_crc[0], m_parsing_info.total_frame_len, base_received_crc);
+                    if (check_crc_ret == true)
+                    {
+                        printf("LINE%d, baserange CRC check pass!\r\n", __LINE__);
+                        m_rtk_statistics_info.baserange_verified_frame_cnt++;
+                        statisticsBaseStationSatellitesCN0(&curr_baserange);
+
+                        is_get_whole_frame = false;
+                        memset(&curr_baserange.range_header, '\0', header_size);
+                        memset(&curr_baserange.observation_num, '\0', 4);
+                        memset(&curr_baserange.range_data, '\0', baserange_curr_size - header_size - 4 - 4);
+                        memset(&curr_baserange.crc, '\0', 4);
+                        memset(data_buf_for_crc, '\0', MAX_DATA_BUF_LEN);
+                    }
+                    else {
+                        printf("LINE%d, baserange CRC check fail, received crc0: 0x%02x, crc1: 0x%02x, crc2: 0x%02x, crc3: 0x%02x!\r\n", \
+                            __LINE__, curr_baserange.crc[0], curr_baserange.crc[1], curr_baserange.crc[2], curr_baserange.crc[3]);
+                    }
+                    if (LAST_BYTES_0 == m_parsing_info.last_frame_info.last_bytes_num) {
+                        m_parsing_info.parsing_state = FIND_HEADER_FROM_CURR_ELEMENT;
+                        m_parsing_info.total_frame_len = 0;
+                        m_parsing_info.had_parsed_len = 0;
+                        m_parsing_info.need_parse_len = 0;
+                        m_parsing_info.had_parsed_item_num = 0;
+                        m_parsing_info.left_size_in_last_element = 0;
+                        m_parsing_info.left_size_in_curr_element = 0;
+                        m_parsing_info.left_item_num_in_curr_element = 0;
+                        m_parsing_info.last_frame_info.last_loop_cnt = loop_cnt;
+                    }
+                    else if (LAST_BYTES_5 == m_parsing_info.last_frame_info.last_bytes_num) {
+                        m_parsing_info.parsing_state = FIND_HEADER_FROM_LAST_ELEMENT;
+                    }
+                    break;
+                }
+                case PARSE_BESTSATS_DONE:
+                {
+                    break;
+                }
+                case PARSE_RANGECMP_DONE:
+                {
+                    break;
+                }
+                default:
+                {
+                    printf("Unknown parsing state: %d\r\n", m_parsing_info.parsing_state);
+                    break;
+                }
+            }
+
+
+
+
+
+
 
             if (need_parse) {
                 int local_left_size = 0;
@@ -896,35 +1446,6 @@ int main(int argc, char *argv[])
                 printf("LINE%d, is_get_whole_frame: %d\r\n", __LINE__, is_get_whole_frame);
             }
             if (is_get_whole_frame) {
-                memcpy(&data_buf[0], &curr_baserange.range_header, header_size);
-                memcpy(&data_buf[header_size], &curr_baserange.observation_num, 4);
-                int real_data_size = baserange_curr_size - header_size - 4 - 4;
-                memcpy(&data_buf[header_size+4], &curr_baserange.range_data[0], real_data_size);
-                memcpy(&data_buf[header_size+4+real_data_size], &curr_baserange.crc[0], 4);
-                uint32_t base_received_crc = curr_baserange.crc[0] + \
-                    (curr_baserange.crc[1] << 8) + \
-                    (curr_baserange.crc[2] << 16) + \
-                    (curr_baserange.crc[3] << 24);
-                // bool check_crc_ret = checkCRC32((uint8_t *) & curr_baserange.range_header, baserange_curr_size, base_received_crc);
-                for (int n = 0; n < baserange_curr_size; n++) {
-                    printf("%02x ", data_buf[n]);
-                }
-                printf("\r\n");
-                bool check_crc_ret = checkCRC32(&data_buf[0], baserange_curr_size, base_received_crc);
-                if (check_crc_ret == true)
-                {
-                    printf("LINE%d, CRC check pass!\r\n", __LINE__);
-                    baserange_verified_frame_cnt++;
-                    is_get_whole_frame = false;
-                    memset(&curr_baserange.range_header, '\0', header_size);
-                    memset(&curr_baserange.observation_num, '\0', 4);
-                    memset(&curr_baserange.range_data, '\0', baserange_curr_size - header_size - 4 - 4);
-                    memset(&curr_baserange.crc, '\0', 4);
-                    memset(data_buf, '\0', BASERANGE_MAX_LEN);
-                }
-                else {
-                    printf("LINE%d, CRC check fail!\r\n", __LINE__);
-                }
             }
 
             if (loop_cnt >= DEBUG_LINE_START && loop_cnt <= DEBUG_LINE_END) {
