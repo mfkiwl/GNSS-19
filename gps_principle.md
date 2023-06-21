@@ -31,3 +31,17 @@ l = d*[cos(a)/sin(a) + cos(b)/sin(b)] = d*[cos(a)*sin(b) + sin(a)*cos(b)]/[sin(a
 因 sin(a+b) = sin(a)*cos(b) + cos(a)*sin(b)
 
 所以 l = d*sin(a+b)/[sin(a)sin(b)]，也就是 d = l * [sin(a)*sin(b)] / sin(a+b)
+
+
+## 消除模糊度
+
+在论文《Precise Marine DGPS Positioning Using P Code and High Performance C/A Code Technologies》，有这样一句话：
+
+"The level of success of any ambiguity resolution method is a function of several parameters, such as the type and quality of observales used,
+the multipath environment, the distance between the monitor and mobile receivers, and the satellite geometry."
+
+任何消除模糊度的方法的成败取决于以下几个方面，
+  - 使用观测量的类型和质量，例如是单频还是双频
+  - 多径环境
+  - 移动站和参考站距离
+  - 卫星的几何分布
